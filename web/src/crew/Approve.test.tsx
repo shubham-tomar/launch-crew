@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router'
 import App from '../App'
@@ -36,13 +36,14 @@ function mockApi(opts: {
   connect?: ApproveView | { status: number; error: string; message?: string }
   post?: () => Promise<Response>
   refresh?: () => Promise<Response>
+  invite?: View
 } = {}): Mock {
   const m: Mock = { calls: [], polled: { drafts: [], voicedReady: false } }
   const json = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status }))
   vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     m.calls.push({ method, url, body: init?.body as string | undefined })
-    if (url === '/api/s/tok1') return json(200, invite)
+    if (url === '/api/s/tok1') return json(200, opts.invite ?? invite)
     if (url.endsWith('/connect')) {
       const c = opts.connect ?? approveView()
       return 'status' in c ? json(c.status, { error: c.error, message: c.message }) : json(200, c)
@@ -148,6 +149,30 @@ test('double tap sends one post request', async () => {
   ])
   release()
   await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/s/tok1/done'))
+})
+
+test('posts carry the card url when the invite has a card, and empty when it has none', async () => {
+  const sendAll = async (view: View) => {
+    const m = mockApi({
+      connect: approveView({ channels: [X], drafts: [dr('d1', 'c1', 'template one')] }),
+      post: () => Promise.resolve(new Response(JSON.stringify({ outcomes: [
+        { channelId: 'c1', service: 'twitter', status: 'queued', when: null, note: '' },
+      ] }), { status: 200 })),
+      invite: view,
+    })
+    visit()
+    await userEvent.click(await screen.findByRole('button', { name: 'Add to my queue' }))
+    await waitFor(() => expect(posts(m)).toHaveLength(1))
+    return JSON.parse(posts(m)[0].body!).selections
+  }
+  const withCard = { ...invite, card: { url: 'https://r2/ada.png', alt: 'Ada card' } } as unknown as View
+  expect(await sendAll(withCard)).toEqual([
+    { channelId: 'c1', text: 'template one', timing: 'window', assetUrl: 'https://r2/ada.png' },
+  ])
+  cleanup()
+  expect(await sendAll(invite)).toEqual([
+    { channelId: 'c1', text: 'template one', timing: 'window', assetUrl: '' },
+  ])
 })
 
 test('mixed outcomes render one row per channel, no banner', async () => {

@@ -788,3 +788,41 @@ func TestTapAfterWindowEndIsNotScheduled(t *testing.T) {
 		t.Fatalf("outcome %+v, %d creates", out[0], len(createInputs(e.fake)))
 	}
 }
+
+// A selection that asks for an image gets the member's own card as the
+// Buffer asset, whatever URL the caller sent; asking for none sends none.
+func TestPostAttachesMemberCard(t *testing.T) {
+	e := setup(t, channel{"x1", "twitter", "@ana"}, channel{"x2", "twitter", "@ana2"})
+	ctx := context.Background()
+	const card = "https://r2.example/cards/ana.png"
+	a, err := e.q.InsertLaunchAsset(ctx, sqlc.InsertLaunchAssetParams{LaunchID: e.launch.ID, Kind: "contributor", R2Url: card, Sha: "sha-ana"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.q.UpdateCrewMemberCard(ctx, sqlc.UpdateCrewMemberCardParams{ID: e.memberID, CardAssetID: uuid.NullUUID{UUID: a.ID, Valid: true}}); err != nil {
+		t.Fatal(err)
+	}
+	e.fake.Script("CreatePost", success("p-1"), success("p-2"))
+	out, err := crew.Post(ctx, e.deps, e.memberID, []crew.Selection{
+		{ChannelID: "x1", Text: "shipped it", Timing: crew.TimingQueue, AssetURL: "https://evil.example/x.png"},
+		{ChannelID: "x2", Text: "shipped it too", Timing: crew.TimingQueue},
+	})
+	if err != nil || len(out) != 2 {
+		t.Fatalf("post = %+v, %v", out, err)
+	}
+	byText := map[string]map[string]any{}
+	for _, in := range createInputs(e.fake) {
+		byText[in["text"].(string)] = in
+	}
+	assets, _ := byText["shipped it"]["assets"].([]any)
+	if len(assets) != 1 {
+		t.Fatalf("assets = %v, want the card", byText["shipped it"]["assets"])
+	}
+	img, _ := assets[0].(map[string]any)["image"].(map[string]any)
+	if img["url"] != card {
+		t.Fatalf("asset = %v, want %s", assets[0], card)
+	}
+	if _, has := byText["shipped it too"]["assets"]; has {
+		t.Fatalf("empty assetUrl still sent assets: %v", byText["shipped it too"]["assets"])
+	}
+}

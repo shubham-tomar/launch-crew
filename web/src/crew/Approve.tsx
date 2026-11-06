@@ -199,7 +199,7 @@ export default function Approve() {
     setMessage('')
     try {
       const r = await post(memberId, token, picks.map((d) => ({
-        channelId: d.channelId, text: texts.current[d.id] ?? d.text, timing, assetUrl: '',
+        channelId: d.channelId, text: texts.current[d.id] ?? d.text, timing, assetUrl: invite?.card?.url ?? '',
       })))
       const all = { ...outcomes, ...Object.fromEntries(r.outcomes.map((o) => [o.channelId, o])) }
       setOutcomes(all)
