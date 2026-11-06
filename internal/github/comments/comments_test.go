@@ -179,3 +179,40 @@ func TestRollCallFallsBackToPRComment(t *testing.T) {
 		t.Fatalf("fallback comments: %+v", cs)
 	}
 }
+
+func TestRenderTemplateKeepsConsentAndOptOut(t *testing.T) {
+	v := comments.Vars{Captain: "captain", Project: "rocket", Version: "v2.4.0",
+		Credited: comments.Credited([]comments.PR{{Number: 42, Title: "Split-pane resize"}}),
+		Link:     "https://l.example/s/abc", Settings: "https://l.example/settings"}
+	// The default template renders exactly as Body does.
+	if got, want := comments.Render("", v), comments.Body("captain", "rocket", "v2.4.0", []comments.PR{{Number: 42, Title: "Split-pane resize"}}, v.Link, v.Settings); got != want {
+		t.Fatalf("default render:\n%s\nwant:\n%s", got, want)
+	}
+	// A captain's own wording keeps the consent sentence and the opt-out line.
+	got := comments.Render("Hey! {captain} just cut {project} {version}, thanks for {credited}. Tap here: {link}", v)
+	want := "Hey! captain just cut rocket v2.4.0, thanks for your PR, *Split-pane resize*. Tap here: https://l.example/s/abc\n\n" +
+		comments.ConsentSentence + "\n\nOpt out or delete your data: https://l.example/settings"
+	if got != want {
+		t.Fatalf("custom render:\n%s\nwant:\n%s", got, want)
+	}
+	// A template that already carries them is not doubled.
+	again := comments.Render(got, v)
+	if strings.Count(again, comments.ConsentSentence) != 1 || strings.Count(again, v.Settings) != 1 {
+		t.Fatalf("footer doubled:\n%s", again)
+	}
+}
+
+func TestValidateTemplate(t *testing.T) {
+	if err := comments.ValidateTemplate(""); err != nil {
+		t.Fatalf("empty means default: %v", err)
+	}
+	if err := comments.ValidateTemplate("Thanks for your PR, tap {link}"); err != nil {
+		t.Fatalf("valid: %v", err)
+	}
+	if err := comments.ValidateTemplate("Thanks for your PR"); err == nil || !strings.Contains(err.Error(), "{link}") {
+		t.Fatalf("missing link: %v", err)
+	}
+	if err := comments.ValidateTemplate(strings.Repeat("x", comments.MaxTemplateLen+1) + "{link}"); err == nil {
+		t.Fatal("too long accepted")
+	}
+}

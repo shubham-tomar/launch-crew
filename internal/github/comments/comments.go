@@ -31,12 +31,66 @@ type PR struct {
 	Title  string
 }
 
+// DefaultTemplate is the per-person comment as shipped. A captain may
+// replace it with their own wording; see Render.
+const DefaultTemplate = "**@{captain}** launched **{project} {version}** and credited {credited}.\n\n" +
+	"[Share your contribution]({link})\n\n" + ConsentSentence + "\n\nOpt out or delete your data: {settings}"
+
+// Placeholders are the fields a template may use, in the order the editor lists them.
+var Placeholders = []string{"{captain}", "{project}", "{version}", "{credited}", "{link}", "{settings}"}
+
+// MaxTemplateLen bounds a captain's template, so a comment stays a comment.
+const MaxTemplateLen = 1500
+
+// Vars fill a template: the captain's login, the project and version, the
+// credited PRs as a phrase ("your PR, *title*"), the invite link and the
+// settings link.
+type Vars struct {
+	Captain, Project, Version, Credited, Link, Settings string
+}
+
 // Body is the per-person comment. It opens with the captain, not the bot.
 // prs is newest first; one PR reads as a single title, several as a short list.
 func Body(captainLogin, project, version string, prs []PR, link, settingsLink string) string {
-	return fmt.Sprintf("**@%s** launched **%s %s** and credited %s.\n\n"+
-		"[Share your contribution](%s)\n\n%s\n\nOpt out or delete your data: %s",
-		captainLogin, project, version, credited(prs), link, ConsentSentence, settingsLink)
+	return Render(DefaultTemplate, Vars{Captain: captainLogin, Project: project, Version: version, Credited: credited(prs), Link: link, Settings: settingsLink})
+}
+
+// Credited phrases the PRs a comment credits, for a template's {credited}.
+func Credited(prs []PR) string { return credited(prs) }
+
+// Render fills a captain's template. Whatever the template says, the
+// consent sentence and the opt-out line are kept: they are appended when
+// the template leaves them out, so a comment never drops the person's way out.
+func Render(tmpl string, v Vars) string {
+	if strings.TrimSpace(tmpl) == "" {
+		tmpl = DefaultTemplate
+	}
+	body := strings.NewReplacer(
+		"{captain}", v.Captain, "{project}", v.Project, "{version}", v.Version,
+		"{credited}", v.Credited, "{link}", v.Link, "{settings}", v.Settings,
+	).Replace(strings.TrimSpace(tmpl))
+	if !strings.Contains(body, ConsentSentence) {
+		body += "\n\n" + ConsentSentence
+	}
+	if v.Settings != "" && !strings.Contains(body, v.Settings) {
+		body += "\n\nOpt out or delete your data: " + v.Settings
+	}
+	return body
+}
+
+// ValidateTemplate says what is wrong with a captain's template, or nil.
+// An empty template means the default.
+func ValidateTemplate(tmpl string) error {
+	t := strings.TrimSpace(tmpl)
+	switch {
+	case t == "":
+		return nil
+	case len([]rune(t)) > MaxTemplateLen:
+		return fmt.Errorf("keep the comment template under %d characters", MaxTemplateLen)
+	case !strings.Contains(t, "{link}"):
+		return fmt.Errorf("the comment template needs {link}, or the person has nothing to tap")
+	}
+	return nil
 }
 
 func credited(prs []PR) string {

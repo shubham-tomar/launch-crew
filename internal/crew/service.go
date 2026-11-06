@@ -194,6 +194,8 @@ type launchInfo struct {
 	l       sqlc.Launch
 	project string
 	changes []change
+	// notes are the captain's drafting notes for the crew's posts, if any.
+	notes string
 }
 
 func (i launchInfo) version() string { return i.l.ReleaseTag.String }
@@ -232,6 +234,11 @@ func infoOf(ctx context.Context, d Deps, l sqlc.Launch) launchInfo {
 	if len(l.HeadlineChanges) > 0 {
 		if err := json.Unmarshal(l.HeadlineChanges, &info.changes); err != nil {
 			log.Printf("crew: launch %s headline changes: %v", l.ID, err)
+		}
+	}
+	if l.OwnerUserID.Valid {
+		if cs, err := d.Q.GetCaptainSettings(ctx, l.OwnerUserID.UUID); err == nil {
+			info.notes = cs.DraftNotes
 		}
 	}
 	return info
@@ -281,7 +288,7 @@ func subject(ctx context.Context, d Deps, info launchInfo, m sqlc.CrewMember) dr
 	s := drafting.Subject{
 		Project: info.project, Version: info.version(), URL: info.l.ReleaseUrl.String,
 		Headline: info.headline(), PRTitle: m.PrTitle.String,
-		Role: m.Role, RoleHint: m.RoleHint, TalkTitle: m.TalkTitle,
+		Role: m.Role, RoleHint: m.RoleHint, TalkTitle: m.TalkTitle, Notes: info.notes,
 	}
 	if prs := memberPRs(ctx, d, m); len(prs) > 1 {
 		for _, p := range prs {

@@ -452,3 +452,37 @@ func TestCaptainRetryCommentOtherLaunch(t *testing.T) {
 		t.Fatalf("member of another launch: %d, want 404", rr.Code)
 	}
 }
+
+func TestCaptainSettingsRoutes(t *testing.T) {
+	e := setupCaptain(t)
+	mine := e.cookie(t, session.Session{UserID: e.owner.ID})
+	theirs := e.cookie(t, session.Session{UserID: e.other.ID})
+
+	if rr := e.do("GET", "/api/captain/settings", "", nil, nil); rr.Code != http.StatusUnauthorized {
+		t.Fatalf("signed out: %d", rr.Code)
+	}
+	rr := e.do("GET", "/api/captain/settings", "", nil, mine)
+	v := decode(t, rr)
+	if rr.Code != 200 || v["commentTemplate"] != "" || v["draftNotes"] != "" || v["defaultComment"] == "" || v["preview"] == "" {
+		t.Fatalf("defaults: %d %s", rr.Code, rr.Body)
+	}
+	rr = e.do("PUT", "/api/captain/settings", `{"commentTemplate":"Thanks for your PR!"}`, nil, mine)
+	if rr.Code != http.StatusBadRequest || decode(t, rr)["error"] != "invalid" {
+		t.Fatalf("template without {link}: %d %s", rr.Code, rr.Body)
+	}
+	rr = e.do("PUT", "/api/captain/settings", `{"commentTemplate":"{captain} shipped {project} {version} with {credited}. Tap {link}","draftNotes":"Mention the Discord."}`, nil, mine)
+	v = decode(t, rr)
+	if rr.Code != 200 || v["draftNotes"] != "Mention the Discord." || !strings.Contains(v["preview"].(string), "you shipped rocket v2.4.0") || !strings.Contains(v["preview"].(string), "Nothing posts without your tap") {
+		t.Fatalf("save: %d %s", rr.Code, rr.Body)
+	}
+	// A later save of one field keeps the other.
+	rr = e.do("PUT", "/api/captain/settings", `{"draftNotes":""}`, nil, mine)
+	v = decode(t, rr)
+	if rr.Code != 200 || v["draftNotes"] != "" || !strings.HasPrefix(v["commentTemplate"].(string), "{captain} shipped") {
+		t.Fatalf("partial save: %d %s", rr.Code, rr.Body)
+	}
+	// Another captain sees their own defaults, not these.
+	if rr := e.do("GET", "/api/captain/settings", "", nil, theirs); rr.Code != 200 || decode(t, rr)["commentTemplate"] != "" {
+		t.Fatalf("other captain: %d %s", rr.Code, rr.Body)
+	}
+}

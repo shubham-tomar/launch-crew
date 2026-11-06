@@ -1125,3 +1125,28 @@ func TestLateLaunchJobQueuesCaptainPosts(t *testing.T) {
 		}
 	}
 }
+
+func TestCommentUsesTheCaptainsTemplate(t *testing.T) {
+	e := setup(t)
+	tmpl := "{captain} just cut {project} {version}, thanks for {credited}. Tap {link}"
+	if _, err := launch.SaveSettings(e.ctx, e.deps, e.owner.ID, launch.SettingsPatch{CommentTemplate: &tmpl}); err != nil {
+		t.Fatal(err)
+	}
+	if err := launch.Launch(e.ctx, e.deps, e.launch.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.drain(t); err != nil {
+		t.Fatal(err)
+	}
+	cs := e.gh.IssueComments(int(e.alice.PrNumber.Int32))
+	if len(cs) != 1 {
+		t.Fatalf("comments on alice's PR: %+v", cs)
+	}
+	body := cs[0].Body
+	if !strings.HasPrefix(body, "captain just cut rocket v1.2.0, thanks for your PR") || !strings.Contains(body, "Tap https://lc.test/s/") {
+		t.Fatalf("body does not follow the template:\n%s", body)
+	}
+	if !strings.Contains(body, "Nothing posts without your tap") || !strings.Contains(body, "Opt out or delete your data: https://lc.test/settings?token=") {
+		t.Fatalf("body lost the consent footer:\n%s", body)
+	}
+}

@@ -45,6 +45,8 @@ func NewCaptain(deps launch.Deps, sessions *session.Store) http.Handler {
 	})
 	r.Get("/repos", c.repos)
 	r.Patch("/repos/{id}", c.patchRepo)
+	r.Get("/settings", c.settings)
+	r.Put("/settings", c.saveSettings)
 	return r
 }
 
@@ -283,4 +285,26 @@ func (c *Captain) patchRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, repo)
+}
+
+func (c *Captain) settings(w http.ResponseWriter, r *http.Request) {
+	v, err := launch.GetSettings(r.Context(), c.deps, userID(r))
+	if err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (c *Captain) saveSettings(w http.ResponseWriter, r *http.Request) {
+	var p launch.SettingsPatch
+	if !readJSON(w, r, &p) {
+		return
+	}
+	v, err := launch.SaveSettings(r.Context(), c.deps, userID(r), p)
+	if err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
 }

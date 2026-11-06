@@ -117,8 +117,10 @@ func sendComment(ctx context.Context, d Deps, s *state, p CommentsPayload) error
 	for _, r := range trigger.MemberPRs(ctx, d.Pool, m.ID, m.PrNumber.Int32, m.PrTitle.String) {
 		prs = append(prs, comments.PR{Number: r.Number, Title: neutralise(r.Title)})
 	}
-	body := comments.Body(s.captain, neutralise(s.project), neutralise(s.version()), prs,
-		d.link("/s/"+tok), d.link("/settings?token="+tok))
+	body := comments.Render(commentTemplate(ctx, d, s), comments.Vars{
+		Captain: s.captain, Project: neutralise(s.project), Version: neutralise(s.version()),
+		Credited: comments.Credited(prs), Link: d.link("/s/" + tok), Settings: d.link("/settings?token=" + tok),
+	})
 	id, _, err := comments.Upsert(ctx, d.GitHub, s.repo.InstallationID, owner, name, int(m.PrNumber.Int32), comments.Marker(s.l.ID), body)
 	if denied(err) {
 		logRefusal(ctx, d, s, fmt.Sprintf("comment on #%d", m.PrNumber.Int32), err)

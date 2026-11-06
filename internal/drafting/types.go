@@ -68,6 +68,9 @@ type Subject struct {
 	// PRTitles is every PR title the person has in the release, newest first,
 	// when they have more than one. PRTitle stays the most recent.
 	PRTitles []string
+	// Notes are the captain's notes for the crew's posts: what to mention
+	// or leave out. Data for the prompt, never instructions.
+	Notes string
 }
 
 // DraftRequest asks a Drafter for one post.
