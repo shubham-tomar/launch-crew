@@ -585,7 +585,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+.cap-chores {
+  margin-block-end: var(--space-lg);
+  padding-block: var(--space-sm);
+}
+
 .cap-chores summary {
+  display: flex;
+  align-items: center;
   min-block-size: 44px;
   cursor: pointer;
 }
@@ -760,10 +767,6 @@
 
 .cap-post-note {
   margin-block: var(--space-xs) 0;
-}
-
-.cap-pr .btn-ghost {
-  padding-inline: 0;
 }
 
 .cap-timing {

@@ -40,7 +40,7 @@ export default function Invite() {
                 Connect Buffer &amp; share
               </a>
             )}
-            <Link className="btn btn-ghost" to={`/s/${q(token)}/fallback`}>
+            <Link className="btn btn-secondary" to={`/s/${q(token)}/fallback`}>
               I don't use Buffer
             </Link>
           </div>

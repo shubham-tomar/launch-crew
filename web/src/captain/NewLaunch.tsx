@@ -241,7 +241,7 @@ export default function NewLaunch() {
                       onChange={(e) => setRole(i, { hint: e.target.value })}
                     />
                   </label>
-                  <Button variant="ghost" onClick={() => setRoles((rs) => rs.filter((_, j) => j !== i))}>
+                  <Button variant="secondary" onClick={() => setRoles((rs) => rs.filter((_, j) => j !== i))}>
                     Remove<span className="visually-hidden"> role {i + 1}</span>
                   </Button>
                 </div>

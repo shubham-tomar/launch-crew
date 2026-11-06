@@ -32,12 +32,6 @@
   border-color: var(--color-text);
 }
 
-.btn-ghost {
-  background-color: transparent;
-  color: var(--color-text);
-  text-decoration: underline;
-}
-
 .btn:disabled {
   opacity: 0.45;
   cursor: default;
@@ -335,10 +329,6 @@ a.btn {
   align-items: center;
   justify-content: center;
   text-decoration: none;
-}
-
-a.btn-ghost {
-  text-decoration: underline;
 }
 
 .voicecard {

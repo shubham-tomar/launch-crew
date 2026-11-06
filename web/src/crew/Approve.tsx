@@ -76,7 +76,7 @@ function CopyPath({ text, token }: { text: string; token: string }) {
       <p className="crew-preview">{text}</p>
       <Button onClick={copy}>{copied ? 'Copied' : 'Copy text'}</Button>
       {manual && <textarea className="crew-draft" readOnly value={text} aria-label="Draft text" onFocus={(e) => e.target.select()} />}
-      <Link className="btn btn-ghost" to={`/s/${encodeURIComponent(token)}/fallback`}>Other ways to share</Link>
+      <Link className="btn btn-secondary" to={`/s/${encodeURIComponent(token)}/fallback`}>Other ways to share</Link>
     </div>
   )
 }

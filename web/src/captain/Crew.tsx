@@ -7,11 +7,11 @@ type Props = { detail: Detail; pending: boolean; onTicked: (ids: string[]) => vo
 
 const pickable = (c: CrewRow) => c.state === 'suggested' || c.state === 'ticked'
 
-function CopyLink({ url, label, variant = 'secondary' }: { url: string; label: string; variant?: 'secondary' | 'ghost' }) {
+function CopyLink({ url, label }: { url: string; label: string }) {
   const [done, setDone] = useState(false)
   return (
     <Button
-      variant={variant}
+      variant="secondary"
       onClick={async () => {
         await copy(url)
         setDone(true)
@@ -64,7 +64,7 @@ export default function Crew({ detail, pending, onTicked }: Props) {
             <span className="cap-muted cap-crew-role">{c.role}</span>
             {c.commentFailed ? (
               c.inviteUrl ? (
-                <CopyLink url={c.inviteUrl} label="comment failed · copy link" variant="ghost" />
+                <CopyLink url={c.inviteUrl} label="comment failed · copy link" />
               ) : (
                 <span className="cap-state cap-state-err">comment failed</span>
               )

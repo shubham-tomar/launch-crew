@@ -333,21 +333,33 @@
 
 .crew-inline {
   position: relative;
-  display: inline;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-accent-strong);
-  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 36px;
+  margin-inline: var(--space-xs);
+  padding-inline: var(--space-ms);
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--color-hairline);
+  border-radius: var(--rounded-sm);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: var(--type-small-size);
   font-weight: 600;
-  text-decoration: underline;
+  vertical-align: middle;
   cursor: pointer;
 }
 
+.crew-inline:hover {
+  border-color: var(--color-text);
+}
+
+/* The box is 36px tall; this stretches the tap target to 44px. */
 .crew-inline::after {
   content: "";
   position: absolute;
-  inset: -0.75rem -0.25rem;
+  inset: -0.25rem;
 }
 
 .crew-results {

@@ -93,7 +93,7 @@ export default function VoiceCard({ profile, onSave, onClose }: Props) {
       {saved && <Alert tone="success" role="status">Saved. Your drafts are being rewritten.</Alert>}
       <div className="voicecard-actions">
         <Button variant="secondary" busy={busy} onClick={save}>Rewrite in this voice</Button>
-        <Button variant="ghost" onClick={onClose}>Done</Button>
+        <Button variant="secondary" onClick={onClose}>Done</Button>
       </div>
     </div>
   )

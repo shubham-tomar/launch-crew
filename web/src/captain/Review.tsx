@@ -137,7 +137,7 @@ function Post({
                 >
                   Edit draft
                 </Button>
-                <Button variant="ghost" disabled={skipping} aria-label={`Remove post for ${d.channelName}`} onClick={() => skip(true)}>
+                <Button variant="secondary" disabled={skipping} aria-label={`Remove post for ${d.channelName}`} onClick={() => skip(true)}>
                   Remove post
                 </Button>
               </span>
@@ -158,7 +158,7 @@ function PrRow({ pr, editable, pending, toggle }: { pr: Pr; editable: boolean; p
         <span className="cap-muted"> · {pr.authorLogin}</span>
       </span>
       {editable && (
-        <Button variant="ghost" aria-pressed={pr.hidden} disabled={pending} onClick={toggle}>
+        <Button variant="secondary" aria-pressed={pr.hidden} disabled={pending} onClick={toggle}>
           {pr.hidden ? 'Keep' : 'Hide'}
           <span className="visually-hidden"> #{pr.prNumber}</span>
         </Button>

@@ -149,7 +149,7 @@ test('primary button visible at 375x667', async () => {
   const primary = await screen.findByRole('link', { name: 'Connect Buffer & share' })
   const order = Array.from(document.querySelectorAll('h1, .crew-preview, .crew-caption, a.btn'))
   expect(order.map((n) => n.className || n.tagName)).toEqual([
-    'card-title', 'crew-preview', 'crew-caption', 'btn btn-primary', 'btn btn-ghost',
+    'card-title', 'crew-preview', 'crew-caption', 'btn btn-primary', 'btn btn-secondary',
   ])
   expect(order[3]).toBe(primary)
   const bottom = shellTop + markRow + panelPad + card + gap + perf + gap + previewH + gap + captionH + gap + button

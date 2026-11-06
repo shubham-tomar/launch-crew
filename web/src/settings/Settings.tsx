@@ -110,7 +110,7 @@ export default function Settings() {
               </Alert>
             )}
             {signedIn && phase === 'idle' && (
-              <Button variant="ghost" onClick={() => setPhase('confirm')}>
+              <Button variant="secondary" onClick={() => setPhase('confirm')}>
                 Delete everything
               </Button>
             )}

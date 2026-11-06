@@ -89,10 +89,10 @@ export default function Fallback() {
               Open in Bluesky
             </a>
             <p className="crew-note">LinkedIn doesn't accept pre-filled text — copy above, then post.</p>
-            <a className="btn btn-ghost" href={`/auth/buffer/start?signup=1&return_to=/s/${q(token)}/approve`}>
+            <a className="btn btn-secondary" href={`/auth/buffer/start?signup=1&return_to=/s/${q(token)}/approve`}>
               Create free Buffer account
             </a>
-            <Link className="btn btn-ghost" to={`/s/${q(token)}`}>
+            <Link className="btn btn-secondary" to={`/s/${q(token)}`}>
               Back
             </Link>
           </div>
