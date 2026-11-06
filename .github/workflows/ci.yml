@@ -36,7 +36,7 @@ jobs:
       - name: Web tests and build
         working-directory: web
         run: npm ci && npm test && npm run lint && npm run build
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       # The DB-backed tests share one Postgres and each migrates it, so packages must not run in parallel.
@@ -67,7 +67,7 @@ jobs:
           cache-dependency-path: |
             web/package-lock.json
             e2e/package-lock.json
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - run: |
