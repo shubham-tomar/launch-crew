@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"log"
 	"net/http"
@@ -45,6 +46,7 @@ func NewCaptain(deps launch.Deps, sessions *session.Store) http.Handler {
 	})
 	r.Get("/repos", c.repos)
 	r.Patch("/repos/{id}", c.patchRepo)
+	r.Post("/repos/{id}/card-preview", c.repoCardPreview)
 	r.Get("/settings", c.settings)
 	r.Put("/settings", c.saveSettings)
 	return r
@@ -285,6 +287,25 @@ func (c *Captain) patchRepo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, repo)
+}
+
+// repoCardPreview draws a sample card with unsaved branding, as a data URL.
+func (c *Captain) repoCardPreview(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		notFound(w, r)
+		return
+	}
+	var p launch.RepoPatch
+	if !readJSON(w, r, &p) {
+		return
+	}
+	png, err := launch.RepoCardPreview(r.Context(), c.deps, userID(r), id, p)
+	if err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"png": "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)})
 }
 
 func (c *Captain) settings(w http.ResponseWriter, r *http.Request) {

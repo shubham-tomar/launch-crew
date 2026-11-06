@@ -339,3 +339,30 @@
   color: var(--color-text-muted);
   font-size: var(--type-small-size);
 }
+
+.rp-preview {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+  max-inline-size: 40rem;
+}
+
+.rp-preview img {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 1200 / 630;
+  transition: opacity 160ms;
+}
+
+.rp-preview .rp-preview-stale {
+  opacity: 0.55;
+}
+
+.rp-preview-empty {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 1200 / 630;
+  border-radius: var(--rounded-md);
+}

@@ -66,3 +66,6 @@ SELECT * FROM launch_assets WHERE launch_id = $1 AND kind = $2 ORDER BY id DESC 
 
 -- name: GetRepo :one
 SELECT * FROM repos WHERE id = $1;
+
+-- name: ListLaunchAssetURLs :many
+SELECT id, r2_url FROM launch_assets WHERE launch_id = $1;

@@ -546,3 +546,25 @@ test('while the launch loads the page shows shimmering placeholders, not a spinn
   expect(screen.getByRole('status')).toHaveTextContent('Loading this launch')
   expect(container.querySelectorAll('.skeleton-line').length).toBeGreaterThan(3)
 })
+
+test('the release card and each crew card open from a fold', async () => {
+  mockApi({
+    detail: detail({
+      cardUrl: 'https://cdn.example/cards/release.png',
+      crew: [
+        { id: 'm1', name: 'ada', login: 'ada', role: 'contributor', state: 'invited', commentFailed: false, commentRetriesLeft: 3, cardUrl: 'https://cdn.example/cards/ada.png', posts: [] },
+        { id: 'm2', name: 'bob', login: 'bob', role: 'contributor', state: 'suggested', commentFailed: false, commentRetriesLeft: 3, posts: [] },
+      ],
+    }),
+  })
+  visit('/captain/launches/l1')
+  const release = await screen.findByText('Release card')
+  expect(release.closest('details')!.open).toBe(false)
+  await userEvent.click(release)
+  expect(screen.getByRole('img', { name: /^Release card for / })).toHaveAttribute('src', 'https://cdn.example/cards/release.png')
+
+  const cards = screen.getAllByText('Card')
+  expect(cards).toHaveLength(1) // bob has no card yet
+  await userEvent.click(cards[0])
+  expect(screen.getByRole('img', { name: 'Contributor card for ada' })).toHaveAttribute('src', 'https://cdn.example/cards/ada.png')
+})

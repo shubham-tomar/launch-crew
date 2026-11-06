@@ -55,6 +55,8 @@ type CrewRow struct {
 	// RetriesLeft is how many more times the failed comment can be retried.
 	RetriesLeft int    `json:"commentRetriesLeft"`
 	InviteURL   string `json:"inviteUrl,omitempty"`
+	// CardURL is the member's contributor card, once the launch drew it.
+	CardURL string `json:"cardUrl,omitempty"`
 	// Posts are the member's posts Buffer holds, with links once sent.
 	Posts []CrewPost `json:"posts"`
 }
@@ -115,6 +117,8 @@ type DetailView struct {
 	// custom; QRLogoURL is the stored image for custom.
 	QRLogo    string `json:"qrLogo"`
 	QRLogoURL string `json:"qrLogoUrl"`
+	// CardURL is the release card the captain's posts carry when there is no hero.
+	CardURL string `json:"cardUrl"`
 }
 
 // Detail builds the launch page. For a draft it first adds any missing
@@ -136,6 +140,9 @@ func Detail(ctx context.Context, d Deps, id uuid.UUID) (DetailView, error) {
 	}
 	v.CaptainName = captainName(s)
 	v.QRLogo, v.QRLogoURL = qrLogoOf(ctx, d, l.ID)
+	if a, err := d.Q.GetLatestLaunchAssetByKind(ctx, sqlc.GetLatestLaunchAssetByKindParams{LaunchID: l.ID, Kind: "release"}); err == nil {
+		v.CardURL = a.R2Url
+	}
 	if l.Source == "manual" && len(l.OpenTokenEnc) > 0 && (l.Status == statusLaunched || l.Status == statusClosed) {
 		if tok, err := d.Keyring.Decrypt(l.OpenTokenEnc); err == nil {
 			v.OpenURL = d.link("/l/" + string(tok))
@@ -211,6 +218,14 @@ func crewRows(ctx context.Context, d Deps, s *state) ([]CrewRow, Counts, error) 
 	if err != nil {
 		return nil, Counts{}, fmt.Errorf("launch: list crew posts: %w", err)
 	}
+	assets, err := d.Q.ListLaunchAssetURLs(ctx, s.l.ID)
+	if err != nil {
+		return nil, Counts{}, fmt.Errorf("launch: list assets: %w", err)
+	}
+	urls := map[uuid.UUID]string{}
+	for _, a := range assets {
+		urls[a.ID] = a.R2Url
+	}
 	posts := map[uuid.UUID][]CrewPost{}
 	for _, p := range held {
 		posts[p.CrewMemberID] = append(posts[p.CrewMemberID], CrewPost{Network: p.Network, Status: p.Status, ExternalLink: p.ExternalLink})
@@ -224,6 +239,9 @@ func crewRows(ctx context.Context, d Deps, s *state) ([]CrewRow, Counts, error) 
 		r := CrewRow{ID: m.ID, Role: m.Role, State: m.State, CommentFailed: m.CommentFailed, RetriesLeft: left[m.ID], Posts: posts[m.ID]}
 		if r.Posts == nil {
 			r.Posts = []CrewPost{}
+		}
+		if m.CardAssetID.Valid {
+			r.CardURL = urls[m.CardAssetID.UUID]
 		}
 		if m.GithubUserID.Valid {
 			r.Login = s.login(ctx, d, m.GithubUserID.Int64)

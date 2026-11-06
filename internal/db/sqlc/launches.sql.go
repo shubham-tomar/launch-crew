@@ -324,6 +324,35 @@ func (q *Queries) ListCaptainDrafts(ctx context.Context, launchID uuid.UUID) ([]
 	return items, nil
 }
 
+const listLaunchAssetURLs = `-- name: ListLaunchAssetURLs :many
+SELECT id, r2_url FROM launch_assets WHERE launch_id = $1
+`
+
+type ListLaunchAssetURLsRow struct {
+	ID    uuid.UUID `json:"id"`
+	R2Url string    `json:"r2_url"`
+}
+
+func (q *Queries) ListLaunchAssetURLs(ctx context.Context, launchID uuid.UUID) ([]ListLaunchAssetURLsRow, error) {
+	rows, err := q.db.Query(ctx, listLaunchAssetURLs, launchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLaunchAssetURLsRow
+	for rows.Next() {
+		var i ListLaunchAssetURLsRow
+		if err := rows.Scan(&i.ID, &i.R2Url); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLaunchesByOwner = `-- name: ListLaunchesByOwner :many
 SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo FROM launches
 WHERE owner_user_id = $1 AND status <> 'deleted'

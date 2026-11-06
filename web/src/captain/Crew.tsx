@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
+import Icon from '../components/Icon'
 import IconButton from '../components/IconButton'
 import ServiceIcon from '../components/ServiceIcon'
 import { serviceName } from '../crew/format'
@@ -122,6 +123,16 @@ export default function Crew({ detail, pending, onTicked, onRetryComment }: Prop
               <span className={`cap-state cap-state-${stateTone(c.state)}`}>{c.state.replaceAll('_', ' ')}</span>
             )}
             <CrewPosts posts={c.posts ?? []} name={c.name} />
+            {c.cardUrl && (
+              <details className="cap-card-fold cap-crew-card">
+                <summary className="cap-card-summary">
+                  <Icon name="eye" />
+                  <span>Card</span>
+                  <Icon name="chevron" className="cap-card-chevron" />
+                </summary>
+                <img className="cap-card-img" src={c.cardUrl} alt={`Contributor card for ${c.name}`} loading="lazy" />
+              </details>
+            )}
             {c.commentFailed && (
               <div className="cap-crew-fail">
                 <p className="cap-muted">

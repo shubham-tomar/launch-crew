@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { patchRepo, type Repo } from '../api'
+import { useEffect, useState, type FormEvent } from 'react'
+import { patchRepo, previewRepoCard, type Repo } from '../api'
 import Button from '../components/Button'
 import Icon from '../components/Icon'
 import { asError } from './format'
@@ -10,6 +10,38 @@ const DEFAULT_ACCENT = '#ADA9FF'
 const HEX = /^#[0-9a-f]{6}$/i
 
 const owner = (fullName: string) => fullName.split('/')[0] ?? ''
+const PREVIEW_DELAY = 600
+
+const httpsUrl = (s: string) => {
+  try {
+    return new URL(s).protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+type Preview = { png?: string; error?: string; loading: boolean }
+
+// Redraws the sample card a moment after the logo or accent stops changing, only while the fold is open.
+function useCardPreview(repoId: string, open: boolean, logo: string, accent: string): Preview {
+  const [state, setState] = useState<Preview>({ loading: false })
+  const ready = (logo === '' || httpsUrl(logo)) && (accent === '' || HEX.test(accent))
+  useEffect(() => {
+    if (!open || !ready) return
+    let live = true
+    const t = window.setTimeout(() => {
+      setState((s) => ({ ...s, loading: true, error: undefined }))
+      previewRepoCard(repoId, { logoUrl: logo, accent })
+        .then((r) => live && setState({ png: r.png, loading: false }))
+        .catch((e) => live && setState((s) => ({ ...s, loading: false, error: asError(e).message })))
+    }, PREVIEW_DELAY)
+    return () => {
+      live = false
+      window.clearTimeout(t)
+    }
+  }, [repoId, open, ready, logo, accent])
+  return state
+}
 
 /** The repo's card branding: a logo (the owner's GitHub avatar when empty) and an accent. */
 export default function CardBrand({ repo, onSaved }: { repo: Repo; onSaved: (r: Repo) => void }) {
@@ -18,6 +50,8 @@ export default function CardBrand({ repo, onSaved }: { repo: Repo; onSaved: (r: 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [open, setOpen] = useState(false)
+  const card = useCardPreview(repo.id, open, logo.trim(), accent.trim())
 
   const shown = HEX.test(accent) ? accent : DEFAULT_ACCENT
   const dirty = logo.trim() !== repo.logoUrl || accent.trim().toUpperCase() !== repo.accent.toUpperCase()
@@ -45,7 +79,7 @@ export default function CardBrand({ repo, onSaved }: { repo: Repo; onSaved: (r: 
   }
 
   return (
-    <details className="rp-brand">
+    <details className="rp-brand" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>
         <span className="rp-brand-tile" style={{ boxShadow: `0 0 0 2px ${shown}` }} aria-hidden="true">
           <img src={preview} alt="" loading="lazy" />
@@ -96,6 +130,16 @@ export default function CardBrand({ repo, onSaved }: { repo: Repo; onSaved: (r: 
           </div>
           <span className="rp-brand-hint">Dark colours are refused: the card is ink, so the accent has to read on it.</span>
         </fieldset>
+        <figure className="rp-preview" aria-busy={card.loading || undefined}>
+          {card.png ? (
+            <img src={card.png} alt={`Sample card for ${repo.fullName} with this branding`} className={card.loading ? 'rp-preview-stale' : undefined} />
+          ) : (
+            <span className="rp-preview-empty skeleton-line" aria-hidden="true" />
+          )}
+          <figcaption className="rp-brand-hint">
+            {card.error ? <span className="rp-row-error">{card.error}</span> : card.loading ? 'Drawing the card…' : 'Preview with sample changes. Nothing is saved until you press Save.'}
+          </figcaption>
+        </figure>
         <div className="rp-brand-actions">
           <Button type="submit" disabled={!dirty || badHex} busy={saving}>
             Save branding

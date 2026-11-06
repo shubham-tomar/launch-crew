@@ -224,6 +224,8 @@ export type CrewRow = {
   commentFailed: boolean
   commentRetriesLeft: number
   inviteUrl?: string
+  /** Their contributor card, once the launch drew it. */
+  cardUrl?: string
   posts?: CrewPost[]
 }
 export type Check = { id: number; name: string; ok: boolean; fix: string }
@@ -258,6 +260,8 @@ export type Detail = {
   /** QR centre mark on the show slide and PNG: the plane, nothing, or the captain's own image. */
   qrLogo: QrLogo
   qrLogoUrl: string
+  /** The release card, attached to the captain's posts when there is no hero image. */
+  cardUrl?: string
 }
 export type QrLogo = 'plane' | 'none' | 'custom'
 
@@ -348,6 +352,9 @@ export const bufferChannelUrl = (channelId: string, status: string) => {
   const tab = status === 'posted' ? 'sent' : status === 'draft' ? 'drafts' : 'queue'
   return `https://publish.buffer.com/channels/${encodeURIComponent(channelId)}/${tab}`
 }
+/** Draws a sample card with unsaved branding; png is a data URL. */
+export const previewRepoCard = (id: string, p: { logoUrl: string; accent: string }) =>
+  captain<{ png: string }>(`/repos/${lid(id)}/card-preview`, json('POST', p))
 export const patchRepo = (id: string, p: RepoPatch) =>
   captain<Repo>(`/repos/${lid(id)}`, json('PATCH', p))
 

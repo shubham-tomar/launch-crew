@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import type { Repo } from '../api'
@@ -14,6 +14,7 @@ function setup(list: Repo[]) {
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
       calls.push({ method, url, body })
+      if (url.endsWith('/card-preview')) return Promise.resolve(new Response(JSON.stringify({ png: 'data:image/png;base64,AAAA' }), { status: 200 }))
       if (method === 'PATCH') return Promise.resolve(new Response(JSON.stringify({ ...list[0], ...body }), { status: 200 }))
       return Promise.resolve(new Response(JSON.stringify(list), { status: 200 }))
     }),
@@ -120,4 +121,17 @@ describe('card branding', () => {
     expect(screen.getByRole('button', { name: 'Save branding' })).toBeDisabled()
     expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
   })
+})
+
+test('the branding fold draws a preview once open, and again when the accent changes', async () => {
+  const calls = setup([repo()])
+  await screen.findByText('acme/rocket')
+  const previews = () => calls.filter((c) => c.url.endsWith('/card-preview'))
+  expect(previews()).toHaveLength(0) // closed: nothing drawn
+  await userEvent.click(screen.getByText('Card branding'))
+  const img = await screen.findByRole('img', { name: 'Sample card for acme/rocket with this branding' }, { timeout: 2000 })
+  expect(img).toHaveAttribute('src', 'data:image/png;base64,AAAA')
+  expect(previews()[0]).toMatchObject({ method: 'POST', url: '/api/captain/repos/r1/card-preview', body: { logoUrl: '', accent: '' } })
+  await userEvent.click(screen.getByRole('button', { name: 'Use #D9A520' }))
+  await waitFor(() => expect(previews().at(-1)?.body).toEqual({ logoUrl: '', accent: '#D9A520' }), { timeout: 2000 })
 })

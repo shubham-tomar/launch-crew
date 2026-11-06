@@ -239,6 +239,16 @@ export default function Review({ detail, pending, onHidden, onEditDraft, onSkipD
           <h2 id="cap-posts">Your posts</h2>
           {editable && detail.bufferConnected && <IconButton icon="refresh" label="Refresh channels" busy={checking} onClick={refresh} />}
         </div>
+        {detail.cardUrl && (
+          <details className="cap-card-fold">
+            <summary className="cap-card-summary">
+              <Icon name="eye" />
+              <span>Release card</span>
+              <Icon name="chevron" className="cap-card-chevron" />
+            </summary>
+            <img className="cap-card-img" src={detail.cardUrl} alt={`Release card for ${detail.title}`} loading="lazy" />
+          </details>
+        )}
         {editable && posts.length > 0 && (
           <p className="cap-muted cap-hint">Posts go to each channel you keep. Remove one to skip that channel.</p>
         )}

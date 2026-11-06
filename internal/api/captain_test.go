@@ -128,6 +128,7 @@ func TestCaptainRoutesNeedTheOwner(t *testing.T) {
 		{"POST", base + "/channels/refresh", ""},
 		{"POST", base + "/crew/" + uuid.NewString() + "/retry-comment", ""},
 		{"PATCH", "/api/captain/repos/" + e.repo.ID.String(), `{"enabled":false}`},
+		{"POST", "/api/captain/repos/" + e.repo.ID.String() + "/card-preview", `{}`},
 	} {
 		if rr := e.do(c.method, c.path, c.body, nil, theirs); rr.Code != http.StatusNotFound {
 			t.Fatalf("%s %s by another user: %d, want 404", c.method, c.path, rr.Code)
@@ -198,6 +199,14 @@ func TestCaptainRoutesNeedTheOwner(t *testing.T) {
 	rr = e.do("PATCH", "/api/captain/repos/"+e.repo.ID.String(), `{"allowPrerelease":true}`, nil, mine)
 	if m := decode(t, rr); rr.Code != 200 || m["allowPrerelease"] != true || m["enabled"] != true {
 		t.Fatalf("repo patch: %d %s", rr.Code, rr.Body)
+	}
+	rr = e.do("POST", "/api/captain/repos/"+e.repo.ID.String()+"/card-preview", `{"accent":"#58D3AE"}`, nil, mine)
+	if m := decode(t, rr); rr.Code != 200 || !strings.HasPrefix(fmt.Sprint(m["png"]), "data:image/png;base64,") {
+		t.Fatalf("card preview: %d %.200s", rr.Code, rr.Body)
+	}
+	rr = e.do("POST", "/api/captain/repos/"+e.repo.ID.String()+"/card-preview", `{"accent":"#000000"}`, nil, mine)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("dark accent preview: %d", rr.Code)
 	}
 }
 
