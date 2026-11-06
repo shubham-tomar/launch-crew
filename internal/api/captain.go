@@ -41,6 +41,7 @@ func NewCaptain(deps launch.Deps, sessions *session.Store) http.Handler {
 		r.Post("/launch", c.launch)
 		r.Post("/retry/{jobID}", c.retry)
 		r.Post("/channels/refresh", c.refreshChannels)
+		r.Post("/crew/{memberID}/retry-comment", c.retryComment)
 	})
 	r.Get("/repos", c.repos)
 	r.Patch("/repos/{id}", c.patchRepo)
@@ -113,6 +114,8 @@ func (c *Captain) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusConflict, "preflight_red", err.Error())
 	case errors.Is(err, launch.ErrNoBuffer):
 		writeError(w, http.StatusConflict, "no_buffer", "connect Buffer first")
+	case errors.Is(err, launch.ErrRetryLimit):
+		writeError(w, http.StatusConflict, "retry_limit", "this comment was already retried the most times allowed, copy their link instead")
 	case errors.Is(err, launch.ErrAlreadyLaunched):
 		writeError(w, http.StatusConflict, "already_launched", "this launch has already gone out")
 	default:
@@ -227,6 +230,19 @@ func (c *Captain) retry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := launch.Retry(r.Context(), c.deps, launchID(r), jobID); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "retrying"})
+}
+
+func (c *Captain) retryComment(w http.ResponseWriter, r *http.Request) {
+	memberID, err := uuid.Parse(chi.URLParam(r, "memberID"))
+	if err != nil {
+		notFound(w, r)
+		return
+	}
+	if err := launch.RetryComment(r.Context(), c.deps, launchID(r), memberID); err != nil {
 		c.fail(w, r, err)
 		return
 	}

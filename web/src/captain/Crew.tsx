@@ -3,7 +3,12 @@ import Button from '../components/Button'
 import type { CrewRow, Detail } from '../api'
 import { copy, initials, stateTone } from './format'
 
-type Props = { detail: Detail; pending: boolean; onTicked: (ids: string[]) => void }
+type Props = {
+  detail: Detail
+  pending: boolean
+  onTicked: (ids: string[]) => void
+  onRetryComment: (memberId: string) => void
+}
 
 const pickable = (c: CrewRow) => c.state === 'suggested' || c.state === 'ticked'
 
@@ -23,7 +28,7 @@ function CopyLink({ url, label }: { url: string; label: string }) {
 }
 
 // Right column, first section: who is in, with states; add by link for manual launches.
-export default function Crew({ detail, pending, onTicked }: Props) {
+export default function Crew({ detail, pending, onTicked, onRetryComment }: Props) {
   const draft = detail.status === 'draft'
   const toggle = (id: string) => {
     const ticked = new Set(detail.crew.filter((c) => c.state === 'ticked').map((c) => c.id))
@@ -63,13 +68,32 @@ export default function Crew({ detail, pending, onTicked }: Props) {
             )}
             <span className="cap-muted cap-crew-role">{c.role}</span>
             {c.commentFailed ? (
-              c.inviteUrl ? (
-                <CopyLink url={c.inviteUrl} label="comment failed · copy link" />
-              ) : (
-                <span className="cap-state cap-state-err">comment failed</span>
-              )
+              <span className="cap-state cap-state-err">comment failed</span>
             ) : (
               <span className={`cap-state cap-state-${stateTone(c.state)}`}>{c.state.replaceAll('_', ' ')}</span>
+            )}
+            {c.commentFailed && (
+              <div className="cap-crew-fail">
+                <p className="cap-muted">
+                  GitHub refused the comment. Retry once the app can comment on pull requests, or send them the link yourself.
+                </p>
+                <span className="cap-crew-fail-actions">
+                  {c.commentRetriesLeft > 0 ? (
+                    <Button variant="secondary" disabled={pending} onClick={() => onRetryComment(c.id)}>
+                      Retry comment{' '}
+                      <span className="visually-hidden">for {c.name}</span>
+                    </Button>
+                  ) : (
+                    <span className="cap-muted">Retried the most times allowed.</span>
+                  )}
+                  {c.inviteUrl && <CopyLink url={c.inviteUrl} label="Copy link" />}
+                </span>
+                {c.commentRetriesLeft > 0 && (
+                  <span className="cap-muted">
+                    {c.commentRetriesLeft} {c.commentRetriesLeft === 1 ? 'retry' : 'retries'} left
+                  </span>
+                )}
+              </div>
             )}
           </li>
         ))}

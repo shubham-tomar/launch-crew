@@ -513,6 +513,27 @@
   justify-self: end;
 }
 
+.cap-crew-grid > .cap-crew-fail {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  justify-self: stretch;
+  gap: var(--space-sm) var(--space-md);
+}
+
+.cap-crew-fail > p {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+.cap-crew-fail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
 .cap-person-name {
   min-inline-size: 0;
   overflow-wrap: anywhere;
@@ -620,6 +641,10 @@
 .cap-state-err {
   background-color: color-mix(in srgb, var(--color-error) 12%, var(--color-surface));
   color: var(--color-error);
+}
+
+.cap-crew-grid > .cap-state {
+  justify-self: end;
 }
 
 .cap-tick {

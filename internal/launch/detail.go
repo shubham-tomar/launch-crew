@@ -42,7 +42,9 @@ type CrewRow struct {
 	Role          string    `json:"role"`
 	State         string    `json:"state"`
 	CommentFailed bool      `json:"commentFailed"`
-	InviteURL     string    `json:"inviteUrl,omitempty"`
+	// RetriesLeft is how many more times the failed comment can be retried.
+	RetriesLeft int    `json:"commentRetriesLeft"`
+	InviteURL   string `json:"inviteUrl,omitempty"`
 }
 
 // CheckView is one preflight check.
@@ -181,13 +183,17 @@ func crewRows(ctx context.Context, d Deps, s *state) ([]CrewRow, Counts, error) 
 	if err != nil {
 		return nil, Counts{}, fmt.Errorf("launch: list crew: %w", err)
 	}
+	left, err := commentRetriesLeft(ctx, d, s.l.ID)
+	if err != nil {
+		return nil, Counts{}, err
+	}
 	out := []CrewRow{}
 	var n Counts
 	for _, m := range rows {
 		if s.isCaptain(m) {
 			continue // the captain is not their own crew
 		}
-		r := CrewRow{ID: m.ID, Role: m.Role, State: m.State, CommentFailed: m.CommentFailed}
+		r := CrewRow{ID: m.ID, Role: m.Role, State: m.State, CommentFailed: m.CommentFailed, RetriesLeft: left[m.ID]}
 		if m.GithubUserID.Valid {
 			r.Login = s.login(ctx, d, m.GithubUserID.Int64)
 		}

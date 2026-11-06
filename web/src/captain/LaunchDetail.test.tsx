@@ -56,7 +56,7 @@ function mockApi(routes: { detail?: Detail; list?: LaunchSummary[] } = {}) {
       const ok = (b: unknown, s = 200) => Promise.resolve(new Response(JSON.stringify(b), { status: s }))
       if (url === '/api/captain/launches' && method === 'GET') return ok(routes.list ?? [])
       if (url.endsWith('/channels/refresh')) return refreshReply()
-      if (url.includes('/retry/')) return ok({ status: 'retrying' }, 202)
+      if (url.includes('/retry/') || url.endsWith('/retry-comment')) return ok({ status: 'retrying' }, 202)
       return ok(routes.detail ?? detail())
     }),
   )
@@ -145,7 +145,7 @@ test('hero url must be https', async () => {
 })
 
 test('crew state words drop underscores', async () => {
-  const row = { id: 'm1', name: 'carol', role: 'contributor', state: 'opted_out', commentFailed: false, inviteUrl: '' }
+  const row = { id: 'm1', name: 'carol', role: 'contributor', state: 'opted_out', commentFailed: false, commentRetriesLeft: 0, inviteUrl: '' }
   mockApi({ detail: detail({ crew: [row as unknown as Detail['crew'][number]], counts: { in: 0, total: 1 } }) })
   visit('/captain/launches/l1')
   expect(await screen.findByText('opted out')).toBeInTheDocument()
@@ -232,7 +232,7 @@ const cd = (over: Partial<Detail['captainDrafts'][number]> = {}): Detail['captai
   id: 'cd1', channelId: 'c1', channelName: 'launchcrew', service: 'twitter', text: 'hello', status: 'draft', bufferPostId: '', note: '', ...over,
 })
 const member = (over: Partial<Detail['crew'][number]> = {}): Detail['crew'][number] => ({
-  id: 'm1', name: 'Maya Kapoor', login: 'mayakp', role: 'contributor', state: 'approved', commentFailed: false, ...over,
+  id: 'm1', name: 'Maya Kapoor', login: 'mayakp', role: 'contributor', state: 'approved', commentFailed: false, commentRetriesLeft: 0, ...over,
 })
 
 test('hero shows the title once, the crew facts and the countdown', async () => {
@@ -381,4 +381,34 @@ test('no refresh channels button once launched or without Buffer', async () => {
   visit('/captain/launches/l1')
   await screen.findByRole('heading', { level: 1 })
   expect(screen.queryByRole('button', { name: 'Refresh channels' })).toBeNull()
+})
+
+const failed = (over: Partial<Detail['crew'][number]> = {}) =>
+  member({ state: 'invited', commentFailed: true, commentRetriesLeft: 3, inviteUrl: 'https://lc.test/s/tok', ...over })
+
+test('a failed PR comment can be retried, and the page reloads', async () => {
+  const calls = mockApi({ detail: detail({ status: 'launched', crew: [failed()], counts: { in: 0, total: 1 } }) })
+  visit('/captain/launches/l1')
+  expect(await screen.findByText('comment failed')).toBeInTheDocument()
+  expect(screen.getByText('3 retries left')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Copy link' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Retry comment for Maya Kapoor' }))
+  const i = calls.findIndex((c) => c.method === 'POST' && c.url === '/api/captain/launches/l1/crew/m1/retry-comment')
+  expect(i).toBeGreaterThan(-1)
+  expect(calls.slice(i + 1).some((c) => c.method === 'GET' && c.url === '/api/captain/launches/l1')).toBe(true)
+})
+
+test('no retry button once the retries are used up, the link stays', async () => {
+  mockApi({ detail: detail({ status: 'launched', crew: [failed({ commentRetriesLeft: 0 })], counts: { in: 0, total: 1 } }) })
+  visit('/captain/launches/l1')
+  expect(await screen.findByText('Retried the most times allowed.')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /Retry comment/ })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Copy link' })).toBeInTheDocument()
+})
+
+test('no retry button for a comment that did not fail', async () => {
+  mockApi({ detail: detail({ status: 'launched', crew: [member({ state: 'invited' })], counts: { in: 0, total: 1 } }) })
+  visit('/captain/launches/l1')
+  await screen.findByText('Maya Kapoor')
+  expect(screen.queryByRole('button', { name: /Retry comment/ })).toBeNull()
 })

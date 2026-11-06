@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'react-router'
-import { pressLaunch, refreshChannels, retryJob, type Detail, type Patch } from '../api'
+import { pressLaunch, refreshChannels, retryComment, retryJob, type Detail, type Patch } from '../api'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
 import Loader from '../components/Loader'
@@ -226,7 +226,12 @@ export default function LaunchDetail() {
               return r.channels
             }}
           />
-          <Crew detail={detail} pending={pending} onTicked={(tickedCrew) => save({ tickedCrew })} />
+          <Crew
+            detail={detail}
+            pending={pending}
+            onTicked={(tickedCrew) => save({ tickedCrew })}
+            onRetryComment={(memberId) => run(async () => { await retryComment(id, memberId); await reload() })}
+          />
         </div>
         <div className="cap-col">
           <Timing detail={detail} onSave={saveTiming} />

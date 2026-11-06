@@ -21,6 +21,7 @@ import (
 	"github.com/shubham-tomar/launchcrew/internal/db"
 	"github.com/shubham-tomar/launchcrew/internal/db/sqlc"
 	"github.com/shubham-tomar/launchcrew/internal/httpserver"
+	"github.com/shubham-tomar/launchcrew/internal/jobs"
 	"github.com/shubham-tomar/launchcrew/internal/launch"
 	"github.com/shubham-tomar/launchcrew/internal/preflight"
 	"github.com/shubham-tomar/launchcrew/internal/session"
@@ -125,6 +126,7 @@ func TestCaptainRoutesNeedTheOwner(t *testing.T) {
 		{"POST", base + "/launch", ""},
 		{"POST", base + "/retry/1", ""},
 		{"POST", base + "/channels/refresh", ""},
+		{"POST", base + "/crew/" + uuid.NewString() + "/retry-comment", ""},
 		{"PATCH", "/api/captain/repos/" + e.repo.ID.String(), `{"enabled":false}`},
 	} {
 		if rr := e.do(c.method, c.path, c.body, nil, theirs); rr.Code != http.StatusNotFound {
@@ -359,5 +361,94 @@ func TestCaptainRefreshChannelsNeedsBuffer(t *testing.T) {
 	rr := e.do("POST", "/api/captain/launches/"+l.ID.String()+"/channels/refresh", "", nil, theirs)
 	if rr.Code != http.StatusConflict || decode(t, rr)["error"] != "no_buffer" {
 		t.Fatalf("no buffer: %d %s", rr.Code, rr.Body)
+	}
+}
+
+// failedMember adds an invited contributor whose PR comment failed.
+func failedMember(t *testing.T, e *captainEnv, launchID uuid.UUID) sqlc.CrewMember {
+	t.Helper()
+	m, err := e.q.InsertCrewMember(e.ctx, sqlc.InsertCrewMemberParams{
+		LaunchID: launchID, GithubUserID: pgtype.Int8{Int64: 7_000_000_000 + int64(uuid.New().ID()), Valid: true},
+		Role: "contributor", InviteTokenHash: []byte(uuid.NewString()), State: "invited",
+		PrNumber: pgtype.Int4{Int32: 12, Valid: true}, PrTitle: pgtype.Text{String: "Faster boosters", Valid: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.q.SetCrewCommentFailed(e.ctx, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestCaptainRetryComment(t *testing.T) {
+	e := setupCaptain(t)
+	mine := e.cookie(t, session.Session{UserID: e.owner.ID})
+	m := failedMember(t, e, e.launch.ID)
+	path := "/api/captain/launches/" + e.launch.ID.String() + "/crew/" + m.ID.String() + "/retry-comment"
+
+	rr := e.do("POST", path, "", nil, mine)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("retry: %d %s", rr.Code, rr.Body)
+	}
+	var failed bool
+	var retries, queued int
+	if err := e.pool.QueryRow(e.ctx, `SELECT comment_failed, comment_retries FROM crew_members WHERE id = $1`, m.ID).Scan(&failed, &retries); err != nil {
+		t.Fatal(err)
+	}
+	if failed || retries != 1 {
+		t.Fatalf("after retry: failed=%v retries=%d, want false and 1", failed, retries)
+	}
+	if err := e.pool.QueryRow(e.ctx, `SELECT count(*) FROM jobs WHERE kind = $1 AND launch_id = $2`, string(jobs.SendComments), e.launch.ID).Scan(&queued); err != nil {
+		t.Fatal(err)
+	}
+	if queued != 1 {
+		t.Fatalf("queued comment jobs = %d, want 1", queued)
+	}
+	// Not failed any more, so a second press has nothing to retry.
+	if rr := e.do("POST", path, "", nil, mine); rr.Code != http.StatusNotFound {
+		t.Fatalf("retry of a comment that has not failed: %d, want 404", rr.Code)
+	}
+}
+
+func TestCaptainRetryCommentIsCapped(t *testing.T) {
+	e := setupCaptain(t)
+	mine := e.cookie(t, session.Session{UserID: e.owner.ID})
+	m := failedMember(t, e, e.launch.ID)
+	path := "/api/captain/launches/" + e.launch.ID.String() + "/crew/" + m.ID.String() + "/retry-comment"
+	for i := 0; i < launch.MaxCommentRetries; i++ {
+		if rr := e.do("POST", path, "", nil, mine); rr.Code != http.StatusAccepted {
+			t.Fatalf("retry %d: %d %s", i+1, rr.Code, rr.Body)
+		}
+		if err := e.q.SetCrewCommentFailed(e.ctx, m.ID); err != nil { // GitHub refused again
+			t.Fatal(err)
+		}
+	}
+	rr := e.do("POST", path, "", nil, mine)
+	if rr.Code != http.StatusConflict || decode(t, rr)["error"] != "retry_limit" {
+		t.Fatalf("over the cap: %d %s", rr.Code, rr.Body)
+	}
+	// The detail tells the page nothing is left.
+	d := e.do("GET", "/api/captain/launches/"+e.launch.ID.String(), "", nil, mine)
+	if d.Code != http.StatusOK || !strings.Contains(d.Body.String(), `"commentRetriesLeft":0`) {
+		t.Fatalf("detail: %d %s", d.Code, d.Body)
+	}
+}
+
+func TestCaptainRetryCommentOtherLaunch(t *testing.T) {
+	e := setupCaptain(t)
+	mine := e.cookie(t, session.Session{UserID: e.owner.ID})
+	l2, err := e.q.CreateLaunch(e.ctx, sqlc.CreateLaunchParams{
+		OwnerUserID: e.owner.ID, Source: "manual", Title: "Second", HeadlineChanges: []byte(`[]`), Roles: []byte(`[]`),
+		WindowMinutes: 90, CrewCap: 200,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := failedMember(t, e, l2.ID)
+	// A member of another launch cannot be retried through this launch's URL.
+	rr := e.do("POST", "/api/captain/launches/"+e.launch.ID.String()+"/crew/"+m.ID.String()+"/retry-comment", "", nil, mine)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("member of another launch: %d, want 404", rr.Code)
 	}
 }

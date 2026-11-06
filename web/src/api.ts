@@ -205,6 +205,7 @@ export type CrewRow = {
   role: string
   state: string
   commentFailed: boolean
+  commentRetriesLeft: number
   inviteUrl?: string
 }
 export type Check = { id: number; name: string; ok: boolean; fix: string }
@@ -302,6 +303,8 @@ export const editCaptainDraft = (id: string, draftId: string, text: string) => p
 export const pressLaunch = (id: string) => captain<{ status: string }>(`/launches/${lid(id)}/launch`, json('POST'))
 export const retryJob = (id: string, jobId: number) =>
   captain<{ status: string }>(`/launches/${lid(id)}/retry/${jobId}`, json('POST'))
+export const retryComment = (id: string, memberId: string) =>
+  captain<{ status: string }>(`/launches/${lid(id)}/crew/${encodeURIComponent(memberId)}/retry-comment`, json('POST'))
 export const refreshChannels = (id: string) =>
   captain<{ channels: number }>(`/launches/${lid(id)}/channels/refresh`, json('POST'))
 export const listRepos = () => captain<Repo[]>('/repos')
