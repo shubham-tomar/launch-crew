@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -21,10 +23,33 @@ const (
 	pageMax     = 100 // PostsCreatedBetween returns at most this many
 )
 
+// pollOutcome is what Buffer's answer for a channel says about one queued
+// post: draftPosted (sent), draftFailed (errored, or gone) or "" to leave it
+// queued (still scheduled, or possibly beyond the page).
+func pollOutcome(posts []buffer.Post, postID string) string {
+	for _, p := range posts {
+		if p.ID != postID {
+			continue
+		}
+		switch p.Status {
+		case "sent":
+			return draftPosted
+		case "error":
+			return draftFailed
+		}
+		return ""
+	}
+	if len(posts) < pageMax {
+		return draftFailed // deleted in Buffer
+	}
+	return ""
+}
+
 // PollStatusHandler handles jobs.PollStatus, once after the window: each
 // queued crew draft is looked up in its member's Buffer and marked posted
 // (sent) or failed_in_buffer (errored, or gone). Drafts still scheduled
-// stay queued. A member with a posted draft becomes posted.
+// stay queued. The captain's own queued posts are looked up the same way.
+// A member with a posted draft becomes posted.
 func PollStatusHandler(d Deps) jobs.Handler {
 	return func(ctx context.Context, j jobs.Job) error {
 		var p LaunchPayload
@@ -74,16 +99,8 @@ func PollStatusHandler(d Deps) jobs.Handler {
 				byID[p.ID] = p
 			}
 			for _, r := range groups[k] {
-				post, found := byID[r.BufferPostID.String]
-				var status string
-				switch {
-				case found && post.Status == "sent":
-					status = draftPosted
-				case found && post.Status == "error":
-					status = draftFailed
-				case !found && len(posts) < pageMax:
-					status = draftFailed // deleted in Buffer
-				default:
+				status := pollOutcome(posts, r.BufferPostID.String)
+				if status == "" {
 					continue // still scheduled, or beyond the page
 				}
 				if err := d.Q.SetCrewDraftStatus(ctx, sqlc.SetCrewDraftStatusParams{ID: r.ID, Status: status}); err != nil {
@@ -95,6 +112,9 @@ func PollStatusHandler(d Deps) jobs.Handler {
 				}
 			}
 		}
+		if err := refreshCaptainDrafts(ctx, d, l, nil); err != nil {
+			errs = append(errs, err)
+		}
 		for id := range posted {
 			if err := d.Q.MarkCrewMemberPosted(ctx, id); err != nil {
 				errs = append(errs, err)
@@ -105,4 +125,85 @@ func PollStatusHandler(d Deps) jobs.Handler {
 		}
 		return errors.Join(errs...)
 	}
+}
+
+// captainRefreshEvery is the least time between lazy refreshes of one
+// launch's captain posts, so page loads do not spend Buffer's rate budget.
+const captainRefreshEvery = 60 * time.Second
+
+var (
+	captainRefreshMu   sync.Mutex
+	captainRefreshLast = map[uuid.UUID]time.Time{}
+)
+
+// throttleCaptainRefresh reports whether launch id may refresh now, and if so
+// records the attempt.
+func throttleCaptainRefresh(id uuid.UUID, now time.Time) bool {
+	captainRefreshMu.Lock()
+	defer captainRefreshMu.Unlock()
+	if last, ok := captainRefreshLast[id]; ok && now.Sub(last) < captainRefreshEvery {
+		return false
+	}
+	captainRefreshLast[id] = now
+	return true
+}
+
+// refreshCaptainDrafts asks the owner's Buffer about the captain's queued
+// posts and marks each posted (sent) or failed (errored, or gone). Posts
+// still scheduled stay queued. conn is the owner's connection, found when nil.
+func refreshCaptainDrafts(ctx context.Context, d Deps, l sqlc.Launch, conn *sqlc.BufferConnection) error {
+	if d.Buffer == nil || d.Pool == nil {
+		return nil
+	}
+	drafts, err := d.Q.ListCaptainDrafts(ctx, l.ID)
+	if err != nil {
+		return fmt.Errorf("list captain drafts: %w", err)
+	}
+	var queued []sqlc.CaptainDraft
+	for _, cd := range drafts {
+		if cd.Status == draftQueued && cd.BufferPostID.Valid {
+			queued = append(queued, cd)
+		}
+	}
+	if len(queued) == 0 {
+		return nil
+	}
+	if conn == nil {
+		if conn, err = ownerConnection(ctx, d, l.OwnerUserID.UUID); err != nil {
+			return err
+		}
+		if conn == nil {
+			return nil
+		}
+	}
+	from, to := l.CreatedAt.Time, d.now().Add(lookupAhead)
+	byChannel := map[string][]buffer.Post{}
+	asked := map[string]bool{}
+	var errs []error
+	for _, cd := range queued {
+		if !asked[cd.ChannelID] {
+			asked[cd.ChannelID] = true
+			posts, err := d.Buffer.PostsCreatedBetween(buffer.WithLaunch(ctx, l.ID), conn.ID, cd.ChannelID, from, to)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("posts for %s: %w", cd.ChannelID, err))
+				continue
+			}
+			byChannel[cd.ChannelID] = posts
+		}
+		posts, ok := byChannel[cd.ChannelID]
+		if !ok {
+			continue
+		}
+		status := pollOutcome(posts, cd.BufferPostID.String)
+		if status == draftFailed {
+			status = captainFailed
+		}
+		if status == "" {
+			continue
+		}
+		if _, err := d.Pool.Exec(ctx, `UPDATE captain_drafts SET status = $2 WHERE id = $1 AND status = 'queued'`, cd.ID, status); err != nil {
+			errs = append(errs, fmt.Errorf("mark captain draft: %w", err))
+		}
+	}
+	return errors.Join(errs...)
 }

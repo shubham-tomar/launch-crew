@@ -194,7 +194,7 @@ export type CaptainDraft = {
   channelName: string
   service: string
   text: string
-  status: 'draft' | 'sending' | 'queued' | 'failed' | 'skipped'
+  status: 'draft' | 'sending' | 'queued' | 'posted' | 'failed' | 'skipped'
   bufferPostId: string
   note: string
 }

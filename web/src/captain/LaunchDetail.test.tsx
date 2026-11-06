@@ -172,6 +172,24 @@ test('captain posts show draft and failed notes', async () => {
   expect(failed.closest('li')).toHaveTextContent('failed')
 })
 
+test('a posted captain post says Posted and has no edit or remove buttons', async () => {
+  mockApi({
+    detail: detail({
+      status: 'launched',
+      captainDrafts: [
+        post({ id: 'a', channelName: 'Acme X', status: 'posted' }),
+        post({ id: 'b', channelName: 'Acme LinkedIn', service: 'linkedin', status: 'queued', bufferPostId: 'b2' }),
+      ],
+    }),
+  })
+  visit('/captain/launches/l1')
+  const posts = await screen.findByRole('region', { name: 'Your posts' })
+  expect(within(posts).getByText('Posted', { exact: false }).closest('li')).toHaveTextContent('Acme X')
+  expect(within(posts).getAllByText('Posted', { exact: false })).toHaveLength(1)
+  expect(within(posts).queryByRole('button', { name: /Edit draft for Acme X/ })).toBeNull()
+  expect(within(posts).queryByRole('button', { name: /Remove/ })).toBeNull()
+})
+
 test('manual draft promises links after launch', async () => {
   mockApi({ detail: detail({ source: 'manual', headlines: [] }) })
   visit('/captain/launches/l1')

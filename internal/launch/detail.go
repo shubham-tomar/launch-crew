@@ -147,6 +147,13 @@ func Detail(ctx context.Context, d Deps, id uuid.UUID) (DetailView, error) {
 			return DetailView{}, err
 		}
 	}
+	if l.Status == statusLaunched && s.conn != nil && l.LaunchAt.Valid && !l.LaunchAt.Time.After(d.now()) &&
+		throttleCaptainRefresh(l.ID, d.now()) {
+		// Never fails the page: a Buffer error leaves the drafts as they are.
+		if err := refreshCaptainDrafts(ctx, d, l, s.conn); err != nil {
+			log.Printf("launch %s: refresh captain posts: %v", l.ID, err)
+		}
+	}
 	drafts, err := d.Q.ListCaptainDrafts(ctx, l.ID)
 	if err != nil {
 		return DetailView{}, fmt.Errorf("launch: list captain drafts: %w", err)

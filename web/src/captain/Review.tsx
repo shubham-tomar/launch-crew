@@ -82,7 +82,7 @@ function Post({
       <div className="cap-post-head">
         <strong>{d.channelName}</strong>
         <span className={d.status === 'failed' ? 'cap-muted cap-err' : 'cap-muted'}>
-          {serviceName(d.service)} · {d.status === 'draft' && d.bufferPostId ? 'saved as draft' : d.status}
+          {serviceName(d.service)} · {d.status === 'draft' && d.bufferPostId ? 'saved as draft' : d.status === 'posted' ? 'Posted' : d.status}
         </span>
       </div>
       {d.note && <p className="cap-muted cap-post-note">{d.note}</p>}

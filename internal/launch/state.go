@@ -66,21 +66,30 @@ func load(ctx context.Context, d Deps, id uuid.UUID) (*state, error) {
 	return s, nil
 }
 
+// ownerConnection is the owner's first working Buffer connection, or nil.
+func ownerConnection(ctx context.Context, d Deps, userID uuid.UUID) (*sqlc.BufferConnection, error) {
+	conns, err := d.Q.ListConnectionsByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range conns {
+		if conns[i].Status == "ok" {
+			return &conns[i], nil
+		}
+	}
+	return nil, nil
+}
+
 // withBuffer loads the captain's connection, channels and rules. A missing
 // connection or an unanswering Buffer leaves them empty; preflight reports it.
 func (s *state) withBuffer(ctx context.Context, d Deps) {
 	s.channels = map[string]buffer.Channel{}
-	conns, err := d.Q.ListConnectionsByUser(ctx, s.l.OwnerUserID.UUID)
+	conn, err := ownerConnection(ctx, d, s.l.OwnerUserID.UUID)
 	if err != nil {
 		log.Printf("launch %s: captain connections: %v", s.l.ID, err)
 		return
 	}
-	for i := range conns {
-		if conns[i].Status == "ok" {
-			s.conn = &conns[i]
-			break
-		}
-	}
+	s.conn = conn
 	if s.conn == nil || d.Buffer == nil {
 		return
 	}
