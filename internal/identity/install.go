@@ -15,6 +15,7 @@ import (
 	"strconv"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/oauth2"
@@ -132,6 +133,7 @@ func (i *Install) Callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "you do not have access to that installation", http.StatusForbidden)
 		return
 	}
+	i.recordCaptainIdentity(ctx, sess.UserID, tok.AccessToken)
 	repos, err := i.GH.ListInstallationRepos(ctx, installID)
 	if err != nil {
 		log.Printf("install: list repos for installation %d: %v", installID, err)
@@ -176,4 +178,29 @@ func (i *Install) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/captain/repos", http.StatusFound)
+}
+
+// recordCaptainIdentity binds the captain's GitHub account to their user so
+// the launch can tell the captain from a contributor. It never fails the
+// install: a GitHub account already bound to another user is left alone.
+func (i *Install) recordCaptainIdentity(ctx context.Context, userID uuid.UUID, token string) {
+	q := sqlc.New(i.Pool)
+	ghID, login, err := i.GH.UserByToken(ctx, token)
+	if err != nil {
+		log.Printf("install: fetch github user: %v", err)
+		return
+	}
+	switch ident, err := q.GetGitHubIdentity(ctx, ghID); {
+	case err == nil && ident.UserID != userID:
+		log.Printf("install: github account %d is bound to another user; captain %s left unrecognised", ghID, userID)
+		return
+	case err != nil && !errors.Is(err, pgx.ErrNoRows):
+		log.Printf("install: look up identity %d: %v", ghID, err)
+		return
+	}
+	if _, err := q.UpsertGitHubIdentity(ctx, sqlc.UpsertGitHubIdentityParams{
+		GithubUserID: ghID, UserID: userID, Login: login,
+	}); err != nil {
+		log.Printf("install: record identity %d: %v", ghID, err)
+	}
 }

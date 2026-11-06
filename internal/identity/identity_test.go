@@ -645,3 +645,67 @@ func TestVerifyCaptainSessionMakesFreshUser(t *testing.T) {
 		t.Fatalf("identity bound to the captain's session user (%v)", err)
 	}
 }
+
+func (e *env) install(t *testing.T, userID uuid.UUID) *httptest.ResponseRecorder {
+	t.Helper()
+	e.fake.InstallRepos = []githubfake.InstallRepo{{ID: 11, FullName: "acme/a"}}
+	install := newInstallID()
+	e.fake.UserInstallations = []int64{install}
+	cookie, state := e.startInstall(t, userID)
+	return e.callback(t, cookie, install, state, true)
+}
+
+func TestInstallRecordsCaptainIdentity(t *testing.T) {
+	e := setup(t)
+	captain := e.newUser(t)
+	ghID := newGHID()
+	e.fake.OAuthUser = githubfake.User{ID: ghID, Login: "cap"}
+	if rr := e.install(t, captain); rr.Code != http.StatusFound {
+		t.Fatalf("install: %d", rr.Code)
+	}
+	got, err := e.q.GetGitHubIdentityByUser(e.ctx, captain)
+	if err != nil || got.GithubUserID != ghID || got.Login != "cap" {
+		t.Fatalf("identity = %+v, %v", got, err)
+	}
+	// Installing again refreshes the login and keeps the binding.
+	e.fake.OAuthUser = githubfake.User{ID: ghID, Login: "cap-renamed"}
+	if rr := e.install(t, captain); rr.Code != http.StatusFound {
+		t.Fatalf("reinstall: %d", rr.Code)
+	}
+	got, err = e.q.GetGitHubIdentityByUser(e.ctx, captain)
+	if err != nil || got.UserID != captain || got.Login != "cap-renamed" {
+		t.Fatalf("identity after reinstall = %+v, %v", got, err)
+	}
+}
+
+func TestInstallLeavesIdentityBoundToAnotherUser(t *testing.T) {
+	e := setup(t)
+	owner, captain := e.newUser(t), e.newUser(t)
+	ghID := newGHID()
+	if _, err := e.q.UpsertGitHubIdentity(e.ctx, sqlc.UpsertGitHubIdentityParams{GithubUserID: ghID, UserID: owner, Login: "owner"}); err != nil {
+		t.Fatal(err)
+	}
+	e.fake.OAuthUser = githubfake.User{ID: ghID, Login: "someone"}
+	if rr := e.install(t, captain); rr.Code != http.StatusFound {
+		t.Fatalf("install must still succeed: %d", rr.Code)
+	}
+	got, err := e.q.GetGitHubIdentity(e.ctx, ghID)
+	if err != nil || got.UserID != owner || got.Login != "owner" {
+		t.Fatalf("identity = %+v, %v; want untouched", got, err)
+	}
+	if _, err := e.q.GetGitHubIdentityByUser(e.ctx, captain); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("captain identity err = %v, want no rows", err)
+	}
+}
+
+func TestInstallSucceedsWhenGitHubUserUnavailable(t *testing.T) {
+	e := setup(t)
+	captain := e.newUser(t)
+	e.fake.OAuthUser = githubfake.User{} // /user answers with no id
+	if rr := e.install(t, captain); rr.Code != http.StatusFound {
+		t.Fatalf("install: %d", rr.Code)
+	}
+	if _, err := e.q.GetGitHubIdentityByUser(e.ctx, captain); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("err = %v, want no rows", err)
+	}
+}

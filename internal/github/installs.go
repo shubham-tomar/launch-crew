@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	gh "github.com/google/go-github/v93/github"
@@ -69,4 +70,24 @@ func (c *Client) ListUserInstallations(ctx context.Context, token string) ([]int
 		}
 		opt.Page = resp.NextPage
 	}
+}
+
+// UserByToken returns the id and login of the GitHub account a user token belongs to.
+func (c *Client) UserByToken(ctx context.Context, token string) (int64, string, error) {
+	base := c.baseURL + "/"
+	cl, err := gh.NewClient(
+		gh.WithHTTPClient(&http.Client{Transport: bearer{token}, Timeout: c.timeout}),
+		gh.WithURLs(&base, &base),
+	)
+	if err != nil {
+		return 0, "", err
+	}
+	u, _, err := cl.Users.Get(ctx, "")
+	if err != nil {
+		return 0, "", err
+	}
+	if u.GetID() == 0 {
+		return 0, "", errors.New("github: user has no id")
+	}
+	return u.GetID(), u.GetLogin(), nil
 }
