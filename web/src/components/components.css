@@ -307,9 +307,13 @@
   overflow: hidden;
 }
 
+/* The rendered card is a transparent ticket: no field, ring or rounding behind it, so its notches show the page. */
 .card-img {
   display: block;
-  object-fit: cover;
+  object-fit: contain;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
 }
 
 .card-body {
