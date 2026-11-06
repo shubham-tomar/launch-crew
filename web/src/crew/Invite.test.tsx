@@ -17,6 +17,7 @@ const base: View = {
   verified: true,
   foreign: false,
   needsVerify: false,
+  connected: false,
   copyText: 'Neutral draft text',
 }
 
@@ -64,6 +65,23 @@ describe('renders every View state', () => {
     expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
     expect(screen.getByText('Built on the Buffer API')).toBeInTheDocument()
     expect(calls[0]).toBe('GET /api/s/tok1')
+  })
+
+  test('already connected shows Continue to approve', async () => {
+    mockApi({ connected: true })
+    visit('/s/tok1')
+    const cont = await screen.findByRole('link', { name: 'Continue' })
+    expect(cont).toHaveAttribute('href', '/s/tok1/approve')
+    expect(cont).toHaveClass('btn-primary')
+    expect(screen.queryByRole('link', { name: 'Connect Buffer & share' })).toBeNull()
+    expect(screen.getByRole('link', { name: "I don't use Buffer" })).toBeInTheDocument()
+  })
+
+  test('not connected keeps Connect Buffer & share', async () => {
+    mockApi({ connected: false })
+    visit('/s/tok1')
+    expect(await screen.findByRole('link', { name: 'Connect Buffer & share' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Continue' })).toBeNull()
   })
 
   test('unverified GitHub contributor', async () => {

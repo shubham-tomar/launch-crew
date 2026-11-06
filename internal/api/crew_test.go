@@ -731,3 +731,47 @@ func TestShowInfoAndPNGCarryTheQRLogo(t *testing.T) {
 		t.Fatalf("none show: %v", got)
 	}
 }
+
+func TestInviteConnectedFlag(t *testing.T) {
+	e := setup(t)
+	own := e.conn(t)
+	other := e.conn(t)
+	tok, hash := crew.NewToken()
+	if _, err := e.q.InsertCrewMember(e.ctx, sqlc.InsertCrewMemberParams{
+		LaunchID: e.launch.ID, Role: "contributor", State: "ticked", InviteTokenHash: hash,
+		UserID:          uuid.NullUUID{UUID: own.UserID, Valid: true},
+		BufferAccountID: pgtype.Text{String: own.BufferAccountID, Valid: true},
+		GithubUserID:    pgtype.Int8{Int64: 3_000_000_000 + int64(uuid.New().ID()), Valid: true},
+		TokenExpiresAt:  pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	connected := func(target string, c *http.Cookie) any {
+		t.Helper()
+		rr := e.do("GET", target, "", nil, c)
+		if rr.Code != 200 {
+			t.Fatalf("invite: %d %s", rr.Code, rr.Body)
+		}
+		return decode(t, rr)["connected"]
+	}
+	ownCookie := e.cookie(t, session.Session{UserID: own.UserID, ConnectionID: own.ID})
+	if v := connected("/api/s/"+tok, nil); v != false {
+		t.Fatalf("no session: connected = %v", v)
+	}
+	if v := connected("/api/s/"+tok, ownCookie); v != true {
+		t.Fatalf("own connection: connected = %v", v)
+	}
+	if v := connected("/api/s/"+tok+"?foreign=1", ownCookie); v != false {
+		t.Fatalf("foreign: connected = %v", v)
+	}
+	otherCookie := e.cookie(t, session.Session{UserID: other.UserID, ConnectionID: other.ID})
+	if v := connected("/api/s/"+tok, otherCookie); v != false {
+		t.Fatalf("another account: connected = %v", v)
+	}
+	if err := e.q.UpdateConnectionStatus(e.ctx, sqlc.UpdateConnectionStatusParams{ID: own.ID, Status: "needs_reconnect"}); err != nil {
+		t.Fatal(err)
+	}
+	if v := connected("/api/s/"+tok, ownCookie); v != false {
+		t.Fatalf("needs_reconnect: connected = %v", v)
+	}
+}

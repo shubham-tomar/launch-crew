@@ -44,9 +44,9 @@ for (const s of sizes) {
       const ctx = await browser.newContext({ storageState: world.alice, viewport: { width: s.width, height: s.height } })
       const page = await ctx.newPage()
       await page.goto(world.alicePath)
-      await expect(page.getByRole('link', { name: 'Connect Buffer & share' })).toBeVisible()
+      await expect(page.getByRole('link', { name: 'Continue' })).toBeVisible()
       await noSideScroll(page)
-      if (fold) await aboveFold(page, 'Connect Buffer & share', 'link')
+      if (fold) await aboveFold(page, 'Continue', 'link')
       await ctx.close()
     })
 

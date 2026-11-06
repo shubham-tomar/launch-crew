@@ -775,3 +775,34 @@ func TestRefreshChannelsNeedsAConnection(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNotConnected", err)
 	}
 }
+
+func TestConnectedForOnlyTheMembersOwnHealthyConnection(t *testing.T) {
+	s := newSvc(t)
+	s.channels(ch("x1", "twitter"))
+	id, _ := s.member(t)
+	if crew.ConnectedFor(s.ctx, s.deps, id, uuid.Nil) {
+		t.Fatal("connected with no session connection")
+	}
+	owner := s.conn(t)
+	if crew.ConnectedFor(s.ctx, s.deps, id, owner.ID) {
+		t.Fatal("connected before the row is bound to an account")
+	}
+	if _, err := crew.Connect(s.ctx, s.deps, id, owner.ID, uuid.Nil); err != nil {
+		t.Fatal(err)
+	}
+	if !crew.ConnectedFor(s.ctx, s.deps, id, owner.ID) {
+		t.Fatal("own healthy connection not connected")
+	}
+	if crew.ConnectedFor(s.ctx, s.deps, id, s.conn(t).ID) {
+		t.Fatal("another account's connection counted as connected")
+	}
+	if crew.ConnectedFor(s.ctx, s.deps, id, uuid.New()) {
+		t.Fatal("unknown connection counted as connected")
+	}
+	if err := s.q.UpdateConnectionStatus(s.ctx, sqlc.UpdateConnectionStatusParams{ID: owner.ID, Status: "needs_reconnect"}); err != nil {
+		t.Fatal(err)
+	}
+	if crew.ConnectedFor(s.ctx, s.deps, id, owner.ID) {
+		t.Fatal("needs_reconnect counted as connected")
+	}
+}

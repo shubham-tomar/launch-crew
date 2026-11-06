@@ -18,6 +18,7 @@ export type View = {
   verified: boolean
   foreign: boolean
   needsVerify: boolean
+  connected: boolean
   copyText: string
 }
 

@@ -104,6 +104,10 @@ type View struct {
 	// NeedsVerify: a GitHub invite nobody has verified yet; the page leads
 	// with "Verify it's you".
 	NeedsVerify bool `json:"needsVerify"`
+	// Connected: the caller's session already holds a working Buffer
+	// connection that belongs to this member; the page offers Continue instead
+	// of sending them through Buffer's consent again. Set by the API.
+	Connected bool `json:"connected"`
 }
 
 // LaunchView is the public open-link page.
@@ -410,6 +414,27 @@ func Open(ctx context.Context, d Deps, token string, _ net.IP) (View, error) {
 		}
 	}
 	return inviteView(ctx, d, info, m), nil
+}
+
+// ConnectedFor reports whether connectionID is a healthy Buffer connection
+// that is this member's own: same Buffer account the row is bound to, and the
+// same user when the row has one. It reveals nothing beyond the boolean.
+func ConnectedFor(ctx context.Context, d Deps, memberID, connectionID uuid.UUID) bool {
+	if connectionID == uuid.Nil {
+		return false
+	}
+	m, err := getMember(ctx, d, memberID)
+	if err != nil || !m.BufferAccountID.Valid || m.BufferAccountID.String == "" {
+		return false
+	}
+	conn, err := d.Q.GetBufferConnection(ctx, connectionID)
+	if err != nil || conn.Status == "needs_reconnect" {
+		return false
+	}
+	if conn.BufferAccountID != m.BufferAccountID.String {
+		return false
+	}
+	return !m.UserID.Valid || m.UserID.UUID == conn.UserID
 }
 
 func inviteView(ctx context.Context, d Deps, info launchInfo, m sqlc.CrewMember) View {

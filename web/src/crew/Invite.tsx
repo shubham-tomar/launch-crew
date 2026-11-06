@@ -35,6 +35,10 @@ export default function Invite() {
               <a className="btn btn-primary" href={`/github/verify/start?crew=${q(view.member.id)}&t=${q(token)}`}>
                 Verify it's you with GitHub
               </a>
+            ) : view.connected ? (
+              <a className="btn btn-primary" href={`/s/${q(token)}/approve`}>
+                Continue
+              </a>
             ) : (
               <a className="btn btn-primary" href={`/auth/buffer/start?return_to=/s/${q(token)}/approve`}>
                 Connect Buffer &amp; share

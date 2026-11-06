@@ -71,7 +71,7 @@ test('home', async ({ browser }) => {
 
 test('invite', async ({ browser }) => {
   await shoot(browser, world.alice, world.alicePath, 'invite', (p) =>
-    expect(p.getByRole('link', { name: 'Connect Buffer & share' })).toBeVisible())
+    expect(p.getByRole('link', { name: 'Continue' })).toBeVisible())
 })
 
 test('not on Buffer fallback', async ({ browser }) => {

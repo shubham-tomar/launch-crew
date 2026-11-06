@@ -61,7 +61,7 @@ test('invite: before verification (generic card)', async ({ browser }) => {
 test('invite: contributor', async ({ browser }) => {
   const { ctx, page } = await open(browser, world.alice)
   await scan(page, world.alicePath, async (p) => {
-    await expect(p.getByRole('link', { name: 'Connect Buffer & share' })).toBeVisible()
+    await expect(p.getByRole('link', { name: 'Continue' })).toBeVisible()
   })
   await ctx.close()
 })

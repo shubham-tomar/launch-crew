@@ -133,6 +133,8 @@ func (c *Crew) invite(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("foreign") == "1" {
 		// Someone else's link: show the launch, never as the contributor.
 		v.Foreign, v.Verified, v.Member.Verified, v.NeedsVerify = true, false, false, false
+	} else if !v.NeedsVerify {
+		v.Connected = crew.ConnectedFor(r.Context(), c.deps, v.Member.ID, c.sessions.Get(r).ConnectionID)
 	}
 	writeJSON(w, http.StatusOK, v)
 }
