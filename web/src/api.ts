@@ -196,6 +196,8 @@ export type LaunchSummary = {
   crewTotal: number
   /** Initials of up to 5 crew members, for the avatar stack. */
   crewInitials: string[]
+  /** The captain's own name: their GitHub login, else the repo owner, else ''. */
+  captainName: string
 }
 
 export type Pr = { prNumber: number; title: string; authorLogin: string; hidden: boolean }
@@ -208,7 +210,11 @@ export type CaptainDraft = {
   status: 'draft' | 'sending' | 'queued' | 'posted' | 'failed' | 'skipped'
   bufferPostId: string
   note: string
+  /** The post's URL on the network once it was sent. */
+  externalLink?: string
 }
+/** One post a crew member has in their Buffer for this launch. */
+export type CrewPost = { network: string; status: string; externalLink: string }
 export type CrewRow = {
   id: string
   name: string
@@ -218,6 +224,7 @@ export type CrewRow = {
   commentFailed: boolean
   commentRetriesLeft: number
   inviteUrl?: string
+  posts?: CrewPost[]
 }
 export type Check = { id: number; name: string; ok: boolean; fix: string }
 export type DeadLetter = { jobId: number; kind: string; lastError: string; attempts: number }
@@ -319,6 +326,25 @@ export const retryComment = (id: string, memberId: string) =>
 export const refreshChannels = (id: string) =>
   captain<{ channels: number }>(`/launches/${lid(id)}/channels/refresh`, json('POST'))
 export const listRepos = () => captain<Repo[]>('/repos')
+
+/** The captain's templates: the PR comment wording and notes for the model. Empty means the default. */
+export type CaptainSettings = {
+  commentTemplate: string
+  draftNotes: string
+  defaultComment: string
+  placeholders: string[]
+  preview: string
+  maxCommentLen: number
+  maxNotesLen: number
+}
+export const getSettings = () => captain<CaptainSettings>('/settings')
+export const saveSettings = (p: { commentTemplate?: string; draftNotes?: string }) => captain<CaptainSettings>('/settings', json('PUT', p))
+
+// Where a post lives in the Buffer app: the channel's queue, drafts or sent list.
+export const bufferChannelUrl = (channelId: string, status: string) => {
+  const tab = status === 'posted' ? 'sent' : status === 'draft' ? 'drafts' : 'queue'
+  return `https://publish.buffer.com/channels/${encodeURIComponent(channelId)}/${tab}`
+}
 export const patchRepo = (id: string, p: { enabled?: boolean; allowPrerelease?: boolean }) =>
   captain<Repo>(`/repos/${lid(id)}`, json('PATCH', p))
 

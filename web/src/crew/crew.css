@@ -514,3 +514,38 @@
   min-block-size: 44px;
   color: inherit;
 }
+
+/* The slide has no chrome, so the way out is one round button in the corner. */
+.show-close {
+  position: fixed;
+  inset-block-start: var(--space-md);
+  inset-inline-end: var(--space-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border-width: 1px;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--color-slide-text) 30%, transparent);
+  border-radius: var(--rounded-full);
+  background-color: color-mix(in srgb, var(--color-slide-text) 10%, transparent);
+  color: var(--color-slide-text);
+  cursor: pointer;
+}
+
+.show-close:hover {
+  border-color: var(--color-slide-text);
+}
+
+@media print {
+  .show-close {
+    display: none;
+  }
+}
+
+/* The refresh icon sits in the chip row at chip height. */
+.crew-refresh {
+  align-self: center;
+}

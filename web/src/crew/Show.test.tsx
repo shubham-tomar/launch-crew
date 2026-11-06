@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import App from '../App'
 import { logoOf } from './Show'
@@ -74,4 +75,28 @@ test('the QR colours come from the design tokens, not literals', async () => {
     expect.objectContaining({ color: { dark: '#111111', light: '#eeeeee' } })))
   await vi.waitFor(() => expect(fill).toEqual(['#eeeeee', '#222222']))
   vi.restoreAllMocks()
+})
+
+test('the slide has a Close control that leaves it, and Escape does the same', async () => {
+  const f = vi.fn((url: string) =>
+    Promise.resolve(new Response(JSON.stringify(url.includes('/show') ? { title: 'T', shortUrl: 'https://lc.test/l/open1' } : []))),
+  )
+  vi.stubGlobal('fetch', f)
+  visit()
+  await screen.findByRole('heading', { level: 1 })
+  // Opened fresh, there is no page to go back to, so Close goes to the launches.
+  await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+  expect(await screen.findByText(/No launches yet/)).toBeInTheDocument()
+  expect(f).toHaveBeenCalledWith('/api/captain/launches', undefined)
+})
+
+test('Escape leaves the slide too', async () => {
+  const f = vi.fn((url: string) =>
+    Promise.resolve(new Response(JSON.stringify(url.includes('/show') ? { title: 'T', shortUrl: 'https://lc.test/l/open1' } : []))),
+  )
+  vi.stubGlobal('fetch', f)
+  visit()
+  await screen.findByRole('heading', { level: 1 })
+  await userEvent.keyboard('{Escape}')
+  expect(await screen.findByText(/No launches yet/)).toBeInTheDocument()
 })

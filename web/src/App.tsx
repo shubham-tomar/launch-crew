@@ -4,6 +4,7 @@ import LaunchDetail from './captain/LaunchDetail'
 import Launches from './captain/Launches'
 import NewLaunch from './captain/NewLaunch'
 import Repos from './captain/Repos'
+import Templates from './captain/Templates'
 import Approve from './crew/Approve'
 import Done from './crew/Done'
 import Fallback from './crew/Fallback'
@@ -51,6 +52,7 @@ export default function App() {
       <Route path="/captain/new" element={<NewLaunch />} />
       <Route path="/captain/launches/:id" element={<LaunchDetail />} />
       <Route path="/captain/repos" element={<Repos />} />
+      <Route path="/captain/templates" element={<Templates />} />
       <Route path="*" element={<Home />} />
     </Routes>
     </>

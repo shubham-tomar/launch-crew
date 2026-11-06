@@ -3,9 +3,9 @@ import { Link } from 'react-router'
 import { listLaunches, type ApiError, type LaunchSummary } from '../api'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
-import Loader from '../components/Loader'
+import { SkeletonPanel } from '../components/Skeleton'
 import Frame from './Frame'
-import { asError, stamp, until } from './format'
+import { asError, initials, stamp, until } from './format'
 import { useNow } from './useNow'
 import './launches.css'
 
@@ -44,10 +44,12 @@ export function viewOf(l: LaunchSummary, now = Date.now()): View {
   return { tone, label, value: left || (l.launchAt ? 'Overdue' : 'Not set'), sub: when }
 }
 
-function progress(l: LaunchSummary) {
-  if (l.crewTotal === 0) return 'No crew yet'
+// The captain is always in their own crew and their posts are drafted for them, so the
+// count reads "2 of 2" for a captain and one contributor, as the launch page does.
+export function progress(l: LaunchSummary) {
+  if (l.crewTotal === 0) return 'Just you so far'
   const word = l.status === 'closed' ? 'posted' : l.status === 'launched' ? 'queued' : 'approved'
-  return `${l.crewIn} of ${l.crewTotal} ${word}`
+  return `${l.crewIn + 1} of ${l.crewTotal + 1} ${word}`
 }
 
 // "2 passes on the board. 1 posting now. Next boarding in 2h 14m."
@@ -92,9 +94,11 @@ function Ghost() {
 
 function LaunchCard({ l, now }: { l: LaunchSummary; now: number }) {
   const v = viewOf(l, now)
-  const shown = l.crewInitials.slice(0, 5)
-  const extra = Math.max(0, l.crewTotal - shown.length)
-  const pct = l.crewTotal > 0 ? Math.round((l.crewIn / l.crewTotal) * 100) : 0
+  const people = [initials(l.captainName || 'You'), ...l.crewInitials]
+  const shown = people.slice(0, 5)
+  const total = l.crewTotal + 1
+  const extra = Math.max(0, total - shown.length)
+  const pct = Math.round(((l.crewIn + 1) / total) * 100)
   return (
     <li className="ln-item">
       <Link className="ln-card" to={`/captain/launches/${l.id}`} data-tone={v.tone}>
@@ -125,21 +129,17 @@ function LaunchCard({ l, now }: { l: LaunchSummary; now: number }) {
             </span>
           </span>
           <span className="ln-crew">
-            {shown.length > 0 && (
-              <span className="ln-avatars" aria-hidden="true">
-                {shown.map((s, i) => (
-                  <span key={i} className="ln-avatar">
-                    {s}
-                  </span>
-                ))}
-                {extra > 0 && <span className="ln-avatar ln-avatar-more">+{extra}</span>}
-              </span>
-            )}
-            {l.crewTotal > 0 && (
-              <span className="ln-bar" aria-hidden="true">
-                <span style={{ inlineSize: `${pct}%` }} />
-              </span>
-            )}
+            <span className="ln-avatars" aria-hidden="true">
+              {shown.map((s, i) => (
+                <span key={i} className={i === 0 ? 'ln-avatar ln-avatar-captain' : 'ln-avatar'}>
+                  {s}
+                </span>
+              ))}
+              {extra > 0 && <span className="ln-avatar ln-avatar-more">+{extra}</span>}
+            </span>
+            <span className="ln-bar" aria-hidden="true">
+              <span style={{ inlineSize: `${pct}%` }} />
+            </span>
             <span className="ln-progress">{progress(l)}</span>
           </span>
           <span className="ln-go" aria-hidden="true">
@@ -186,8 +186,11 @@ export default function Launches() {
       ) : !items ? (
         <>
           <h1 className="cap-title">Launches</h1>
-          <div aria-busy="true">
-            <Loader label="Loading your launches" />
+          <div role="status" aria-busy="true" className="ln-list">
+            <span className="visually-hidden">Loading your launches</span>
+            <SkeletonPanel lines={2} />
+            <SkeletonPanel lines={2} />
+            <SkeletonPanel lines={2} />
           </div>
         </>
       ) : items.length === 0 ? (

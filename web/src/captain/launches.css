@@ -344,3 +344,14 @@
     min-inline-size: 0;
   }
 }
+
+/* The captain leads the stack, in the accent, so "2 of 2" reads as two people. */
+.ln-avatar-captain {
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.ln-card[data-tone="closed"] .ln-avatar-captain {
+  background-color: var(--color-text-muted);
+  color: var(--color-surface);
+}

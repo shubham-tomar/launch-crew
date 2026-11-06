@@ -3,7 +3,8 @@ import { useParams } from 'react-router'
 import { pressLaunch, refreshChannels, retryComment, retryJob, type Detail, type Patch } from '../api'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
-import Loader from '../components/Loader'
+import Icon from '../components/Icon'
+import { SkeletonPanel } from '../components/Skeleton'
 import Plane from '../components/Plane'
 import Crew from './Crew'
 import Frame from './Frame'
@@ -191,8 +192,19 @@ export default function LaunchDetail() {
   if (!detail) {
     return (
       <Frame>
-        <div aria-busy="true">
-          <Loader label="Loading this launch" />
+        <div role="status" aria-busy="true" className="cap-loading">
+          <span className="visually-hidden">Loading this launch</span>
+          <SkeletonPanel lines={2} className="cap-loading-hero" />
+          <div className="cap-grid">
+            <div className="cap-col">
+              <SkeletonPanel lines={4} />
+              <SkeletonPanel lines={3} />
+            </div>
+            <div className="cap-col">
+              <SkeletonPanel lines={3} />
+              <SkeletonPanel lines={5} />
+            </div>
+          </div>
         </div>
       </Frame>
     )
@@ -257,17 +269,12 @@ export default function LaunchDetail() {
             <section className="cap-section panel cap-share" aria-labelledby="cap-share">
               <h2 id="cap-share">Share at the event</h2>
               <div className="cap-share-row">
-                <a className="btn btn-secondary" href={detail.showUrl}>
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <rect x="3" y="4" width="18" height="12" rx="2" />
-                    <path d="M8 20h8M12 16v4" />
-                  </svg>
-                  Show at the event
+                <a className="btn btn-secondary btn-with-icon" href={detail.showUrl}>
+                  <Icon name="qr" />
+                  Show QR at the event
                 </a>
-                <a className="btn btn-secondary" href={detail.pngUrl} download>
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14" />
-                  </svg>
+                <a className="btn btn-secondary btn-with-icon" href={detail.pngUrl} download>
+                  <Icon name="download" />
                   Download PNG
                 </a>
               </div>

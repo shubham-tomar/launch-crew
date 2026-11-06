@@ -26,6 +26,9 @@ export default function Frame({ children }: { children: ReactNode }) {
               <li>
                 <NavLink to="/captain/repos">Repos</NavLink>
               </li>
+              <li>
+                <NavLink to="/captain/templates">Templates</NavLink>
+              </li>
             </>
           }
           end={

@@ -194,7 +194,7 @@ test('manual draft promises links after launch', async () => {
   mockApi({ detail: detail({ source: 'manual', headlines: [] }) })
   visit('/captain/launches/l1')
   expect(await screen.findByText('Link, slide and PNG appear after Launch.')).toBeInTheDocument()
-  expect(screen.queryByRole('link', { name: 'Show at the event' })).toBeNull()
+  expect(screen.queryByRole('link', { name: 'Show QR at the event' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull()
 })
 
@@ -203,7 +203,7 @@ test('launched manual launch shows link, slide and PNG', async () => {
     detail: detail({ source: 'manual', status: 'launched', openUrl: 'https://lc.test/l/t', showUrl: 'https://lc.test/l/t/show', pngUrl: 'https://lc.test/api/l/t/show.png' }),
   })
   visit('/captain/launches/l1')
-  expect(await screen.findByRole('link', { name: 'Show at the event' })).toBeInTheDocument()
+  expect(await screen.findByRole('link', { name: 'Show QR at the event' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Copy link' })).toBeInTheDocument()
   expect(screen.queryByText('Link, slide and PNG appear after Launch.')).toBeNull()
 })
@@ -354,7 +354,7 @@ test('manual launches get a Share at the event panel with real buttons', async (
   mockApi({ detail: detail({ source: 'manual', showUrl: '/l/abc/show', pngUrl: '/l/abc/card.png' }) })
   visit('/captain/launches/l1')
   const panel = await screen.findByRole('region', { name: 'Share at the event' })
-  const show = within(panel).getByRole('link', { name: 'Show at the event' })
+  const show = within(panel).getByRole('link', { name: 'Show QR at the event' })
   const png = within(panel).getByRole('link', { name: 'Download PNG' })
   expect(show).toHaveClass('btn', 'btn-secondary')
   expect(show).toHaveAttribute('href', '/l/abc/show')
@@ -480,4 +480,69 @@ test('the hero countdown ticks and asks for a later time once the moment passes'
   } finally {
     vi.useRealTimers()
   }
+})
+
+test('a sent captain post links to it on the network and in Buffer', async () => {
+  mockApi({
+    detail: detail({
+      status: 'closed',
+      captainDrafts: [
+        cd({ status: 'posted', bufferPostId: 'p1', externalLink: 'https://x.com/launchcrew/status/1' }),
+        cd({ id: 'cd2', channelId: 'c2', channelName: 'Acme LinkedIn', service: 'linkedin', status: 'queued', bufferPostId: 'p2' }),
+      ],
+    }),
+  })
+  visit('/captain/launches/l1')
+  const posts = await screen.findByRole('region', { name: 'Your posts' })
+  expect(within(posts).getByRole('link', { name: 'View on X' })).toHaveAttribute('href', 'https://x.com/launchcrew/status/1')
+  const buffer = within(posts).getAllByRole('link', { name: 'Open in Buffer' })
+  expect(buffer).toHaveLength(2)
+  expect(buffer[0]).toHaveAttribute('href', 'https://publish.buffer.com/channels/c1/sent')
+  expect(buffer[1]).toHaveAttribute('href', 'https://publish.buffer.com/channels/c2/queue')
+  expect(within(posts).queryByRole('link', { name: 'View on LinkedIn' })).toBeNull()
+})
+
+test("a crew member's posts link out once sent and say where they are until then", async () => {
+  mockApi({
+    detail: detail({
+      status: 'closed',
+      crew: [member({ state: 'posted', posts: [{ network: 'twitter', status: 'posted', externalLink: 'https://x.com/mayakp/status/7' }, { network: 'bluesky', status: 'queued', externalLink: '' }] })],
+      counts: { in: 1, total: 1 },
+    }),
+  })
+  visit('/captain/launches/l1')
+  const list = await screen.findByRole('list', { name: 'Posts by Maya Kapoor' })
+  expect(within(list).getByRole('link', { name: 'View on X' })).toHaveAttribute('href', 'https://x.com/mayakp/status/7')
+  expect(within(list).getByText('Bluesky · queued')).toBeInTheDocument()
+})
+
+test('post actions and the PR hide toggle are icon buttons with full names', async () => {
+  mockApi({ detail: detail({ captainDrafts: [cd()] }) })
+  visit('/captain/launches/l1')
+  const edit = await screen.findByRole('button', { name: 'Edit draft for launchcrew' })
+  expect(edit).toHaveClass('btn-icon')
+  expect(edit).toHaveAttribute('title', 'Edit draft for launchcrew')
+  expect(screen.getByRole('button', { name: 'Remove post for launchcrew' })).toHaveClass('btn-icon')
+  expect(screen.getByRole('button', { name: 'Hide #11' })).toHaveAttribute('aria-pressed', 'false')
+  expect(screen.getByRole('button', { name: 'Refresh channels' })).toHaveClass('btn-icon')
+})
+
+test('hidden chores fold away behind a toggle that says Show, then Hide', async () => {
+  mockApi({ detail: detail({ chores: [{ prNumber: 3, title: 'Bump deps', authorLogin: 'bot', hidden: true }] }) })
+  visit('/captain/launches/l1')
+  const toggle = await screen.findByText('1 hidden chore')
+  const details = toggle.closest('details')!
+  expect(details.open).toBe(false)
+  expect(within(details).getByText('Show')).toBeInTheDocument()
+  await userEvent.click(toggle)
+  expect(details.open).toBe(true)
+  expect(within(details).getByText('Hide')).toBeInTheDocument()
+  expect(within(details).getByRole('button', { name: 'Keep #3' })).toBeInTheDocument()
+})
+
+test('while the launch loads the page shows shimmering placeholders, not a spinner', async () => {
+  vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+  const { container } = visit('/captain/launches/l1')
+  expect(screen.getByRole('status')).toHaveTextContent('Loading this launch')
+  expect(container.querySelectorAll('.skeleton-line').length).toBeGreaterThan(3)
 })

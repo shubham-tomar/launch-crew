@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import Button from '../components/Button'
+import Icon from '../components/Icon'
+import IconButton from '../components/IconButton'
+import ServiceIcon from '../components/ServiceIcon'
 import { serviceName } from '../crew/format'
-import type { CaptainDraft, Detail, Pr } from '../api'
+import { bufferChannelUrl, type CaptainDraft, type Detail, type Pr } from '../api'
 import { asError, limitOf } from './format'
 
 type Props = {
@@ -12,6 +15,28 @@ type Props = {
   onSkipDraft: (draftId: string, skipped: boolean) => Promise<void>
   // Re-reads the captain's Buffer channels and reloads the launch; resolves to the channel count.
   onRefreshChannels: () => Promise<number>
+}
+
+const statusWord = (d: CaptainDraft) =>
+  d.status === 'draft' && d.bufferPostId ? 'saved as draft' : d.status === 'posted' ? 'Posted' : d.status
+
+// Where the captain can see the post: in Buffer once it is there, and on the network once sent.
+function PostLinks({ d }: { d: CaptainDraft }) {
+  if (!d.bufferPostId) return null
+  return (
+    <span className="cap-post-links">
+      {d.status === 'posted' && d.externalLink && (
+        <a className="cap-link" href={d.externalLink} target="_blank" rel="noopener noreferrer">
+          <ServiceIcon service={d.service} />
+          View on {serviceName(d.service)}
+        </a>
+      )}
+      <a className="cap-link" href={bufferChannelUrl(d.channelId, d.status)} target="_blank" rel="noopener noreferrer">
+        <Icon name="external" />
+        Open in Buffer
+      </a>
+    </span>
+  )
 }
 
 // One of the captain's posts, with an editor that opens in place while the launch is still a draft.
@@ -66,11 +91,7 @@ function Post({
           <span className="cap-muted">
             Not posting to {d.channelName} · {serviceName(d.service)}
           </span>
-          {canEdit && (
-            <Button variant="secondary" disabled={skipping} aria-label={`Add back ${d.channelName}`} onClick={() => skip(false)}>
-              Add back
-            </Button>
-          )}
+          {canEdit && <IconButton icon="plus" label={`Add back ${d.channelName}`} busy={skipping} onClick={() => skip(false)} />}
         </div>
         {problem && <p className="cap-err" role="alert">{problem}</p>}
       </li>
@@ -82,7 +103,7 @@ function Post({
       <div className="cap-post-head">
         <strong>{d.channelName}</strong>
         <span className={d.status === 'failed' ? 'cap-muted cap-err' : 'cap-muted'}>
-          {serviceName(d.service)} · {d.status === 'draft' && d.bufferPostId ? 'saved as draft' : d.status === 'posted' ? 'Posted' : d.status}
+          {serviceName(d.service)} · {statusWord(d)}
         </span>
       </div>
       {d.note && <p className="cap-muted cap-post-note">{d.note}</p>}
@@ -120,26 +141,25 @@ function Post({
         <>
           <p className="cap-post-text">{d.text}</p>
           <div className="cap-post-foot">
-            {limit && (
-              <span className="cap-count-line cap-muted">
-                {d.text.length} / {limit}
-              </span>
-            )}
+            <span className="cap-post-meta">
+              {limit && (
+                <span className="cap-count-line cap-muted">
+                  {d.text.length} / {limit}
+                </span>
+              )}
+              <PostLinks d={d} />
+            </span>
             {canEdit && unsent && (
               <span className="cap-edit-actions">
-                <Button
-                  variant="secondary"
-                  aria-label={`Edit draft for ${d.channelName}`}
+                <IconButton
+                  icon="pencil"
+                  label={`Edit draft for ${d.channelName}`}
                   onClick={() => {
                     setText(d.text)
                     setEditing(true)
                   }}
-                >
-                  Edit draft
-                </Button>
-                <Button variant="secondary" disabled={skipping} aria-label={`Remove post for ${d.channelName}`} onClick={() => skip(true)}>
-                  Remove post
-                </Button>
+                />
+                <IconButton icon="minus" label={`Remove post for ${d.channelName}`} busy={skipping} onClick={() => skip(true)} />
               </span>
             )}
           </div>
@@ -158,10 +178,13 @@ function PrRow({ pr, editable, pending, toggle }: { pr: Pr; editable: boolean; p
         <span className="cap-muted"> · {pr.authorLogin}</span>
       </span>
       {editable && (
-        <Button variant="secondary" aria-pressed={pr.hidden} disabled={pending} onClick={toggle}>
-          {pr.hidden ? 'Keep' : 'Hide'}
-          <span className="visually-hidden"> #{pr.prNumber}</span>
-        </Button>
+        <IconButton
+          icon={pr.hidden ? 'eye' : 'eye-off'}
+          label={`${pr.hidden ? 'Keep' : 'Hide'} #${pr.prNumber}`}
+          aria-pressed={pr.hidden}
+          disabled={pending}
+          onClick={toggle}
+        />
       )}
     </li>
   )
@@ -172,9 +195,10 @@ export default function Review({ detail, pending, onHidden, onEditDraft, onSkipD
   const editable = detail.status === 'draft'
   const [checking, setChecking] = useState(false)
   const [checked, setChecked] = useState('')
+  const [choresOpen, setChoresOpen] = useState(false)
   const refresh = async () => {
     setChecking(true)
-    setChecked('')
+    setChecked('Checking Buffer…')
     try {
       const n = await onRefreshChannels()
       setChecked(`Checked Buffer: ${n} ${n === 1 ? 'channel' : 'channels'}.`)
@@ -211,20 +235,14 @@ export default function Review({ detail, pending, onHidden, onEditDraft, onSkipD
         </section>
       )}
       <section className="cap-section panel" aria-labelledby="cap-posts">
-        <h2 id="cap-posts">Your posts</h2>
-        {editable && (posts.length > 0 || detail.bufferConnected) && (
-          <div className="cap-posts-head">
-            {posts.length > 0 && (
-              <p className="cap-muted cap-hint">Posts go to each channel you keep. Remove one to skip that channel.</p>
-            )}
-            {detail.bufferConnected && (
-              <Button variant="secondary" disabled={checking} busy={checking} onClick={refresh}>
-                {checking ? 'Checking Buffer...' : 'Refresh channels'}
-              </Button>
-            )}
-          </div>
+        <div className="cap-section-head">
+          <h2 id="cap-posts">Your posts</h2>
+          {editable && detail.bufferConnected && <IconButton icon="refresh" label="Refresh channels" busy={checking} onClick={refresh} />}
+        </div>
+        {editable && posts.length > 0 && (
+          <p className="cap-muted cap-hint">Posts go to each channel you keep. Remove one to skip that channel.</p>
         )}
-        <p className="cap-muted cap-hint" role="status">
+        <p className="cap-muted cap-hint cap-checked" role="status">
           {checked}
         </p>
         {posts.length === 0 ? (
@@ -240,11 +258,18 @@ export default function Review({ detail, pending, onHidden, onEditDraft, onSkipD
         )}
       </section>
       {hiddenPrs.length > 0 && (
-        <details className="cap-chores panel">
+        <details className="cap-chores panel" open={choresOpen} onToggle={(e) => setChoresOpen(e.currentTarget.open)}>
           <summary>
-            {hiddenPrs.length} hidden {hiddenPrs.length === 1 ? 'chore' : 'chores'}
+            <span className="cap-chores-title">
+              <Icon name="eye-off" />
+              {hiddenPrs.length} hidden {hiddenPrs.length === 1 ? 'chore' : 'chores'}
+            </span>
+            <span className="cap-chores-cue">
+              {choresOpen ? 'Hide' : 'Show'}
+              <Icon name="chevron" className="cap-chores-chevron" />
+            </span>
           </summary>
-          <ul className="cap-list">
+          <ul className="cap-list cap-chores-list">
             {hiddenPrs.map((p) => (
               <PrRow key={p.prNumber} pr={p} editable={editable} pending={pending} toggle={() => toggle(p.prNumber)} />
             ))}

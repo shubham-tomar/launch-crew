@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { listRepos, patchRepo, type ApiError, type Repo } from '../api'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
-import Loader from '../components/Loader'
+import { SkeletonPanel } from '../components/Skeleton'
 import Frame from './Frame'
 import { asError } from './format'
 import './repos.css'
@@ -109,8 +109,10 @@ export default function Repos() {
       )}
       {!repos ? (
         !error && (
-          <div aria-busy="true">
-            <Loader label="Loading your repos" />
+          <div role="status" aria-busy="true" className="rp-list">
+            <span className="visually-hidden">Loading your repos</span>
+            <SkeletonPanel lines={1} />
+            <SkeletonPanel lines={1} />
           </div>
         )
       ) : repos.length === 0 ? (

@@ -1,7 +1,8 @@
 import QRCode from 'qrcode'
 import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router'
+import { useLocation, useNavigate, useParams } from 'react-router'
 import { ApiError, showInfo, type ShowInfo } from '../api'
+import Icon from '../components/Icon'
 import Wordmark from '../components/Wordmark'
 import { Dead } from './shared'
 import '../styles/print.css'
@@ -98,10 +99,29 @@ async function paint(canvas: HTMLCanvasElement, text: string, logo: Logo) {
 
 export default function Show() {
   const openToken = useParams().openToken ?? ''
+  const navigate = useNavigate()
+  const location = useLocation()
   const [view, setView] = useState<ShowInfo>()
   const [error, setError] = useState<ApiError>()
   const [failed, setFailed] = useState(false)
   const canvas = useRef<HTMLCanvasElement>(null)
+
+  // The slide fills the screen, so it needs its own way out: back to the page that opened
+  // it when there is one, else to the captain's launches. Escape does the same.
+  const close = () => {
+    if (location.key !== 'default') navigate(-1)
+    else navigate('/captain')
+  }
+
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    document.addEventListener('keydown', key)
+    return () => document.removeEventListener('keydown', key)
+    // close only reads location.key and navigate, which change with the route
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key])
 
   useEffect(() => {
     let live = true
@@ -121,6 +141,9 @@ export default function Show() {
 
   return (
     <main className="show">
+      <button type="button" className="show-close" aria-label="Close" title="Close (Esc)" onClick={close}>
+        <Icon name="close" />
+      </button>
       {view && (
         <>
           <h1 className="show-title">{view.title}</h1>

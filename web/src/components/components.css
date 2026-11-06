@@ -206,6 +206,8 @@
 }
 
 .skeleton-line {
+  position: relative;
+  overflow: hidden;
   block-size: 1.5em;
   border-radius: var(--rounded-sm);
   background-color: var(--color-tint);
@@ -811,4 +813,90 @@ a.btn {
   align-items: center;
   gap: var(--space-ms);
   margin-inline-start: auto;
+}
+
+/* Icons: outline marks that sit with the plane; the control around them carries the name. */
+.icon {
+  display: inline-block;
+  flex: none;
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-spin {
+  animation: icon-spin 0.9s linear infinite;
+}
+
+@keyframes icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A square secondary button that holds one icon; 44px is the touch floor. */
+.btn-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: 44px;
+  min-inline-size: 44px;
+  block-size: 44px;
+  min-height: 44px;
+  padding: 0;
+}
+
+.btn-icon[aria-busy="true"] {
+  cursor: progress;
+}
+
+.btn-icon-accent {
+  border-color: var(--color-accent);
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
+.btn-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* Skeleton: tint blocks with a slow sheen passing over them while content is on its way. */
+.skeleton-lines,
+.skeleton-panel {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.skeleton-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-text) 7%, transparent), transparent);
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton-panel {
+  padding: var(--space-lg);
+  border-radius: var(--rounded-lg);
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.skeleton-title {
+  block-size: 1.75em;
+  inline-size: 40%;
 }

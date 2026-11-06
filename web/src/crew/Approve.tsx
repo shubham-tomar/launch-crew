@@ -6,6 +6,7 @@ import Alert from '../components/Alert'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
 import DraftBox from '../components/DraftBox'
+import IconButton from '../components/IconButton'
 import Loader from '../components/Loader'
 import Pass from '../components/Pass'
 import ServiceIcon from '../components/ServiceIcon'
@@ -154,7 +155,7 @@ export default function Approve() {
   const refreshChannels = async () => {
     if (!memberId) return
     setChecking(true)
-    setCheckedNote('')
+    setCheckedNote('Checking Buffer…')
     try {
       const d = await refreshMyChannels(memberId, token)
       setData(d)
@@ -403,9 +404,7 @@ export default function Approve() {
                   onChange={(v) => setChecked((s) => ({ ...s, [c.id]: v }))}
                 />
               ))}
-              <button type="button" className="crew-inline" disabled={checking} onClick={refreshChannels}>
-                {checking ? 'Checking Buffer...' : 'Refresh channels'}
-              </button>
+              <IconButton icon="refresh" label="Refresh channels" busy={checking} className="crew-refresh" onClick={refreshChannels} />
             </div>
             <p className="crew-note crew-fine crew-checked" role="status">
               {checkedNote}
