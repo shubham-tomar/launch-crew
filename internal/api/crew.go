@@ -52,6 +52,7 @@ func NewCrew(deps crew.Deps, sessions *session.Store) http.Handler {
 			r.Post("/post", c.post)
 			r.Post("/disconnect", c.disconnect)
 			r.Post("/remember", c.remember)
+			r.Post("/channels/refresh", c.refreshChannels)
 		})
 	})
 	return r
@@ -225,6 +226,17 @@ func (c *Crew) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := crew.Connect(r.Context(), c.deps, member(r).ID, sess.ConnectionID, sess.UserID)
+	if err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+// refreshChannels re-reads the member's Buffer channels and returns the
+// approve screen, so a channel added in Buffer after connecting shows up.
+func (c *Crew) refreshChannels(w http.ResponseWriter, r *http.Request) {
+	v, err := crew.RefreshChannels(r.Context(), c.deps, member(r).ID)
 	if err != nil {
 		c.fail(w, r, err)
 		return

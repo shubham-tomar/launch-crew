@@ -180,6 +180,7 @@ func TestCrewRouteRequiresTokenOrSession(t *testing.T) {
 		{"POST", "/post", `{"selections":[]}`},
 		{"POST", "/copied", ""},
 		{"POST", "/disconnect", ""},
+		{"POST", "/channels/refresh", ""},
 		{"GET", "/board", ""},
 	}
 	u, _ := e.q.CreateUser(e.ctx)
@@ -265,6 +266,7 @@ func TestBoundRowNeedsOwnerSessionToMutate(t *testing.T) {
 		{"PUT", "/drafts/" + uuid.NewString(), `{"text":"x"}`},
 		{"POST", "/post", `{"selections":[]}`},
 		{"POST", "/disconnect", ""},
+		{"POST", "/channels/refresh", ""},
 	} {
 		if rr := e.do(r.method, base+r.path, r.body, tokHdr, nil); rr.Code != 404 {
 			t.Fatalf("token-only %s %s on bound row: %d", r.method, r.path, rr.Code)

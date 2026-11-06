@@ -689,6 +689,43 @@ func Connect(ctx context.Context, d Deps, memberID, connectionID, sessionUser uu
 	return approve(ctx, d, info, m, conn, true)
 }
 
+// RefreshChannels re-reads the member's Buffer channels, bypassing the
+// one-hour cache, and returns the approve screen again: a channel added in
+// Buffer since the member connected appears, with a template draft. Calls
+// within a few seconds of each other reuse the cache (see buffer.RefreshChannels).
+// A member who has not connected, or whose connection is another user's, is
+// ErrNotConnected.
+func RefreshChannels(ctx context.Context, d Deps, memberID uuid.UUID) (ApproveView, error) {
+	m, err := getMember(ctx, d, memberID)
+	if err != nil {
+		return ApproveView{}, err
+	}
+	if !m.BufferAccountID.Valid {
+		return ApproveView{}, ErrNotConnected
+	}
+	conn, err := d.Q.GetBufferConnectionByAccount(ctx, m.BufferAccountID.String)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && m.UserID.Valid && conn.UserID != m.UserID.UUID) {
+		return ApproveView{}, ErrNotConnected
+	}
+	if err != nil {
+		return ApproveView{}, fmt.Errorf("crew: load connection: %w", err)
+	}
+	info, err := loadLaunch(ctx, d, m.LaunchID)
+	if err != nil {
+		return ApproveView{}, err
+	}
+	if !info.live() {
+		return ApproveView{}, ErrNotFound
+	}
+	if conn.Status != "needs_reconnect" {
+		if _, err := d.Buffer.RefreshChannels(ctx, conn.ID); err != nil && !errors.Is(err, buffer.ErrNeedsReconnect) {
+			log.Printf("crew: refresh channels for %s: %v", m.ID, err)
+			return ApproveView{}, ErrBuffer
+		}
+	}
+	return approve(ctx, d, info, m, conn, true)
+}
+
 func rowForAccount(ctx context.Context, d Deps, launchID uuid.UUID, account string) (sqlc.CrewMember, bool, error) {
 	m, err := d.Q.GetCrewMemberByAccount(ctx, sqlc.GetCrewMemberByAccountParams{
 		LaunchID: launchID, BufferAccountID: pgtype.Text{String: account, Valid: true},

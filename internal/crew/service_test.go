@@ -702,3 +702,76 @@ func TestOptedOutRowStaysOptedOut(t *testing.T) {
 		t.Fatalf("state %s, want opted_out", got.State)
 	}
 }
+
+func TestRefreshChannelsPicksUpANewChannel(t *testing.T) {
+	s := newSvc(t)
+	s.channels(ch("ig1", "instagram"))
+	id, _ := s.member(t)
+	conn := s.conn(t)
+	a, err := crew.Connect(s.ctx, s.deps, id, conn.ID, uuid.Nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Channels) != 1 || len(a.Drafts) != 1 {
+		t.Fatalf("before: channels=%d drafts=%d, want 1 and 1", len(a.Channels), len(a.Drafts))
+	}
+
+	// X is added in Buffer. Within the hour Connect-time cache hides it.
+	s.channels(ch("ig1", "instagram"), ch("x1", "x"))
+	// Age the cache past the throttle so the refresh really goes to Buffer.
+	if _, err := s.pool.Exec(s.ctx, `UPDATE buffer_connections SET channels_cached_at = now() - interval '1 minute' WHERE id = $1`, conn.ID); err != nil {
+		t.Fatal(err)
+	}
+	b, err := crew.RefreshChannels(s.ctx, s.deps, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Channels) != 2 {
+		t.Fatalf("after refresh: channels = %+v, want 2", b.Channels)
+	}
+	if len(b.Drafts) != 2 {
+		t.Fatalf("after refresh: drafts = %d, want one per eligible channel (2)", len(b.Drafts))
+	}
+	byChannel := map[string]bool{}
+	for _, d := range b.Drafts {
+		byChannel[d.ChannelID] = true
+	}
+	if !byChannel["x1"] || !byChannel["ig1"] {
+		t.Fatalf("drafts for %v, want ig1 and x1", byChannel)
+	}
+}
+
+func TestRefreshChannelsKeepsEditedDrafts(t *testing.T) {
+	s := newSvc(t)
+	s.channels(ch("ig1", "instagram"))
+	id, _ := s.member(t)
+	conn := s.conn(t)
+	a, err := crew.Connect(s.ctx, s.deps, id, conn.ID, uuid.Nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := crew.SaveEdit(s.ctx, s.deps, a.Drafts[0].ID, "my own words"); err != nil {
+		t.Fatal(err)
+	}
+	s.channels(ch("ig1", "instagram"), ch("x1", "x"))
+	if _, err := s.pool.Exec(s.ctx, `UPDATE buffer_connections SET channels_cached_at = now() - interval '1 minute' WHERE id = $1`, conn.ID); err != nil {
+		t.Fatal(err)
+	}
+	b, err := crew.RefreshChannels(s.ctx, s.deps, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range b.Drafts {
+		if d.ChannelID == "ig1" && d.Text != "my own words" {
+			t.Fatalf("an edited draft was overwritten: %q", d.Text)
+		}
+	}
+}
+
+func TestRefreshChannelsNeedsAConnection(t *testing.T) {
+	s := newSvc(t)
+	id, _ := s.member(t) // chose a role but never connected Buffer
+	if _, err := crew.RefreshChannels(s.ctx, s.deps, id); !errors.Is(err, crew.ErrNotConnected) {
+		t.Fatalf("err = %v, want ErrNotConnected", err)
+	}
+}

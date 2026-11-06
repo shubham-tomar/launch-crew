@@ -112,6 +112,8 @@ function crew<T>(id: string, token: string, path: string, method: string, body?:
 
 export const connect = (id: string, token: string) => crew<ApproveView>(id, token, '/connect', 'POST')
 
+export const refreshMyChannels = (id: string, token: string) => crew<ApproveView>(id, token, '/channels/refresh', 'POST')
+
 export const getDrafts = (id: string, token: string) =>
   crew<{ drafts: DraftView[]; voicedReady: boolean }>(id, token, '/drafts', 'GET')
 

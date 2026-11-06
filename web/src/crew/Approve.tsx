@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { ApiError, connect, disconnect, post, saveDraft, updateVoice, type ApproveView, type Outcome, type Timing } from '../api'
+import { ApiError, connect, disconnect, post, refreshMyChannels, saveDraft, updateVoice, type ApproveView, type Outcome, type Timing } from '../api'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
@@ -98,6 +98,8 @@ export default function Approve() {
   const [added, setAdded] = useState(false)
   const [message, setMessage] = useState('')
   const [windowGone, setWindowGone] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [checkedNote, setCheckedNote] = useState('')
   const [voice, setVoice] = useState(false)
   const [kept, setKept] = useState(false)
   const [rewriting, setRewriting] = useState(false)
@@ -125,12 +127,31 @@ export default function Approve() {
     }
   }, [memberId, token, invite?.foreign, retry])
 
+  // A channel added in Buffer after connecting is hidden by a one-hour cache; this asks Buffer again.
+  const refreshChannels = async () => {
+    if (!memberId) return
+    setChecking(true)
+    setCheckedNote('')
+    try {
+      const d = await refreshMyChannels(memberId, token)
+      setData(d)
+      adopt(d.drafts)
+      // Keep the person's ticks; a channel that is new takes its default.
+      setChecked((prev) => Object.fromEntries(d.channels.map((c) => [c.id, c.eligible && (c.id in prev ? prev[c.id] : c.checked)])))
+      setCheckedNote(`Checked Buffer: ${d.channels.length} ${d.channels.length === 1 ? 'channel' : 'channels'}.`)
+    } catch {
+      setCheckedNote('Could not reach Buffer, try again.')
+    } finally {
+      setChecking(false)
+    }
+  }
+
   useEffect(() => {
     if (fail?.status === 401) window.location.assign(reconnect)
     if (fail?.code === 'verify_first') navigate(`/s/${encodeURIComponent(token)}`)
   }, [fail, reconnect, navigate, token])
 
-  const { fresh, polling, restart } = useDrafts(memberId, token, !!data && !data.voicedReady)
+  const { fresh, polling, restart, adopt } = useDrafts(memberId, token, !!data && !data.voicedReady)
 
   useEffect(() => {
     if (Object.keys(outcomes).length) results.current?.focus()
@@ -323,7 +344,13 @@ export default function Approve() {
                   onChange={(v) => setChecked((s) => ({ ...s, [c.id]: v }))}
                 />
               ))}
+              <button type="button" className="crew-inline" disabled={checking} onClick={refreshChannels}>
+                {checking ? 'Checking Buffer...' : 'Refresh channels'}
+              </button>
             </div>
+            <p className="crew-note crew-fine crew-checked" role="status">
+              {checkedNote}
+            </p>
           </fieldset>
         )}
       </div>

@@ -42,5 +42,8 @@ export function useDrafts(memberId: string | undefined, token: string, start: bo
 
   const restart = useCallback((shown: DraftView[]) => setRound((r) => ({ n: r.n + 1, base: sig(shown) })), [])
 
-  return { fresh, polling: (start || round.n > 0) && !over, restart }
+  // Replaces what is shown with drafts the server just returned (the polled copy would be stale).
+  const adopt = useCallback((shown: DraftView[]) => setFresh(shown), [])
+
+  return { fresh, polling: (start || round.n > 0) && !over, restart, adopt }
 }

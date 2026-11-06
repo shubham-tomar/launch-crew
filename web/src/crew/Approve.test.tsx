@@ -32,7 +32,11 @@ function approveView(p: Partial<ApproveView> = {}): ApproveView {
 
 type Mock = { calls: { method: string; url: string; body?: string }[]; polled: { drafts: DraftView[]; voicedReady: boolean } }
 
-function mockApi(opts: { connect?: ApproveView | { status: number; error: string; message?: string }; post?: () => Promise<Response> } = {}): Mock {
+function mockApi(opts: {
+  connect?: ApproveView | { status: number; error: string; message?: string }
+  post?: () => Promise<Response>
+  refresh?: () => Promise<Response>
+} = {}): Mock {
   const m: Mock = { calls: [], polled: { drafts: [], voicedReady: false } }
   const json = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status }))
   vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
@@ -44,6 +48,7 @@ function mockApi(opts: { connect?: ApproveView | { status: number; error: string
       return 'status' in c ? json(c.status, { error: c.error, message: c.message }) : json(200, c)
     }
     if (url.endsWith('/drafts') && method === 'GET') return json(200, m.polled)
+    if (url.endsWith('/channels/refresh')) return opts.refresh ? opts.refresh() : json(200, approveView())
     if (url.endsWith('/voice')) return json(200, { voiceLine: 'Short, lowercase.' })
     if (method === 'PUT' || url.endsWith('/disconnect')) return Promise.resolve(new Response(null, { status: 204 }))
     if (url.endsWith('/post')) return opts.post ? opts.post() : json(200, { outcomes: [] })
@@ -347,4 +352,35 @@ test('unedited draft is replaced by the rewrite after a voice save', async () =>
   m.polled = { voicedReady: true, drafts: [dr('d1', 'c1', 'rewritten', { fromModel: true })] }
   await advance(1600)
   expect(area).toHaveValue('rewritten')
+})
+
+test('refresh channels shows a channel added in Buffer after connecting, and keeps the ticks', async () => {
+  const LI = ch('c3', 'Ada on LinkedIn', 'linkedin')
+  const m = mockApi({
+    refresh: () => Promise.resolve(new Response(JSON.stringify(approveView({
+      channels: [X, BSKY, LI],
+      drafts: [dr('d1', 'c1', 'template one'), dr('d2', 'c2', 'template two', { network: 'bluesky' }), dr('d3', 'c3', 'template three', { network: 'linkedin' })],
+    })), { status: 200 })),
+  })
+  const user = userEvent.setup()
+  visit()
+  await box()
+  expect(screen.queryByRole('checkbox', { name: /Ada on LinkedIn/ })).toBeNull()
+  await user.click(screen.getByRole('checkbox', { name: /^ada\.bsky\.social/ })) // untick one
+  await user.click(screen.getByRole('button', { name: 'Refresh channels' }))
+  expect(await screen.findByText('Checked Buffer: 3 channels.')).toBeInTheDocument()
+  expect(m.calls.some((c) => c.method === 'POST' && c.url === '/api/crew/m1/channels/refresh')).toBe(true)
+  expect(screen.getByRole('checkbox', { name: /Ada on LinkedIn/ })).toBeChecked()
+  expect(screen.getByRole('checkbox', { name: /^ada\.bsky\.social/ })).not.toBeChecked()
+  expect(screen.getByRole('tab', { name: /^Ada on LinkedIn/ })).toBeInTheDocument()
+})
+
+test('refresh channels says so when Buffer cannot be reached, and can be tried again', async () => {
+  mockApi({ refresh: () => Promise.resolve(new Response(JSON.stringify({ error: 'buffer_unavailable', message: 'x' }), { status: 502 })) })
+  const user = userEvent.setup()
+  visit()
+  await box()
+  await user.click(screen.getByRole('button', { name: 'Refresh channels' }))
+  expect(await screen.findByText('Could not reach Buffer, try again.')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Refresh channels' })).toBeEnabled()
 })
