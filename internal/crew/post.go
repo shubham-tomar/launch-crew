@@ -410,7 +410,7 @@ func (p *poster) attempt(ctx context.Context, j *job) Outcome {
 
 	in := buffer.CreatePostInput{
 		ChannelID: ch.ID, Text: j.text, Mode: "addToQueue",
-		FirstComment: j.firstComment, Thread: j.thread,
+		FirstComment: j.firstComment, Thread: j.thread, Notification: buffer.RemindersOnly(ch),
 	}
 	switch j.sel.Timing {
 	case TimingWindow:

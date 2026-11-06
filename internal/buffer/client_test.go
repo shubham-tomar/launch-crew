@@ -700,3 +700,127 @@ func TestInvalidGrantAfterForeignRefreshKeepsConnection(t *testing.T) {
 		t.Fatalf("refresh calls = %d, want 1", n)
 	}
 }
+
+func postInputOf(t *testing.T, e *env) map[string]any {
+	t.Helper()
+	reqs := e.fake.Requests()
+	for i := len(reqs) - 1; i >= 0; i-- {
+		if reqs[i].Op == "CreatePost" {
+			return reqs[i].Vars["input"].(map[string]any)
+		}
+	}
+	t.Fatal("no CreatePost request")
+	return nil
+}
+
+func TestThreadCarriesTheCardOnItsRootItem(t *testing.T) {
+	e := setup(t, time.Hour)
+	ctx := context.Background()
+	e.fake.Handle("GetChannels", channelsData)
+	e.fake.Handle("CreatePost", map[string]any{"createPost": map[string]any{
+		"__typename": "PostActionSuccess", "post": map[string]any{"id": "p1", "status": "scheduled"},
+	}})
+	_, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{
+		ChannelID: "ch1", Mode: "addToQueue", Thread: []string{"one", "two"},
+		AssetURLs: []string{"https://cards.example/card.png"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := postInputOf(t, e)
+	if _, ok := input["assets"]; ok {
+		t.Fatalf("top-level assets sent with a thread: %v", input)
+	}
+	items := input["metadata"].(map[string]any)["bluesky"].(map[string]any)["thread"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("thread = %v", items)
+	}
+	root := items[0].(map[string]any)
+	assets, ok := root["assets"].([]any)
+	if !ok || len(assets) != 1 || assets[0].(map[string]any)["image"].(map[string]any)["url"] != "https://cards.example/card.png" {
+		t.Fatalf("root item = %v", root)
+	}
+	if _, ok := items[1].(map[string]any)["assets"]; ok {
+		t.Fatalf("reply carries assets: %v", items[1])
+	}
+	if input["text"] != "one" {
+		t.Fatalf("text = %v, want the root", input["text"])
+	}
+
+	// Without a thread the card stays at the top level.
+	if _, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{
+		ChannelID: "ch1", Text: "solo", Mode: "addToQueue", AssetURLs: []string{"https://cards.example/card.png"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if input := postInputOf(t, e); input["assets"] == nil || input["metadata"] != nil {
+		t.Fatalf("single post input = %v", input)
+	}
+}
+
+func TestInstagramProfileNeedsReminders(t *testing.T) {
+	ig := buffer.Channel{ID: "ig", Service: "instagram", Type: "profile"}
+	if !buffer.RemindersOnly(ig) {
+		t.Fatal("a personal Instagram profile should post by reminder")
+	}
+	for _, ch := range []buffer.Channel{
+		{Service: "instagram", Type: "business"}, {Service: "instagram"}, {Service: "linkedin", Type: "profile"},
+	} {
+		if buffer.RemindersOnly(ch) {
+			t.Fatalf("%+v should publish automatically", ch)
+		}
+	}
+
+	e := setup(t, time.Hour)
+	ctx := context.Background()
+	e.fake.Handle("CreatePost", map[string]any{"createPost": map[string]any{
+		"__typename": "PostActionSuccess", "post": map[string]any{"id": "p1", "status": "scheduled"},
+	}})
+	res, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{ChannelID: "ig", Text: "hi", Mode: "addToQueue", Notification: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Notification || res.Note != buffer.NotifyNote || res.PostID != "p1" {
+		t.Fatalf("result = %+v", res)
+	}
+	if input := postInputOf(t, e); input["schedulingType"] != "notification" {
+		t.Fatalf("schedulingType = %v", input["schedulingType"])
+	}
+}
+
+func TestReminderRefusalRetriesAsNotification(t *testing.T) {
+	e := setup(t, time.Hour)
+	ctx := context.Background()
+	refused := bufferfake.Response{Data: map[string]any{"createPost": map[string]any{
+		"__typename": "InvalidInputError", "message": "This channel only supports notification publishing. Use a reminder instead.",
+	}}}
+	e.fake.Script("CreatePost", refused, bufferfake.Response{Data: map[string]any{"createPost": map[string]any{
+		"__typename": "PostActionSuccess", "post": map[string]any{"id": "p2", "status": "scheduled"},
+	}}})
+	res, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{ChannelID: "ig", Text: "hi", Mode: "addToQueue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.PostID != "p2" || !res.Notification || res.Note != buffer.NotifyNote {
+		t.Fatalf("result = %+v", res)
+	}
+	reqs := e.fake.Requests()
+	if len(reqs) != 2 {
+		t.Fatalf("requests = %d, want 2", len(reqs))
+	}
+	first := reqs[0].Vars["input"].(map[string]any)
+	second := reqs[1].Vars["input"].(map[string]any)
+	if first["schedulingType"] != "automatic" || second["schedulingType"] != "notification" {
+		t.Fatalf("schedulingType first=%v second=%v", first["schedulingType"], second["schedulingType"])
+	}
+
+	// Any other refusal is not retried.
+	e.fake.Script("CreatePost", bufferfake.Response{Data: map[string]any{"createPost": map[string]any{
+		"__typename": "InvalidInputError", "message": "Text too long",
+	}}})
+	_, err = e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{ChannelID: "ig", Text: "hi", Mode: "addToQueue"})
+	var me *buffer.MutationError
+	if !errors.As(err, &me) || e.fake.Count("CreatePost") != 3 {
+		t.Fatalf("err = %v, CreatePost calls = %d", err, e.fake.Count("CreatePost"))
+	}
+}

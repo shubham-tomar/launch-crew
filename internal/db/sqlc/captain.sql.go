@@ -86,7 +86,7 @@ const insertCaptainDraftIfAbsent = `-- name: InsertCaptainDraftIfAbsent :one
 INSERT INTO captain_drafts (launch_id, channel_id, text, thread, first_comment, asset_id)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (launch_id, channel_id) DO NOTHING
-RETURNING id, launch_id, channel_id, text, thread, first_comment, asset_id, status, buffer_post_id, note
+RETURNING id, launch_id, channel_id, text, thread, first_comment, asset_id, status, buffer_post_id, note, external_link
 `
 
 type InsertCaptainDraftIfAbsentParams struct {
@@ -119,6 +119,7 @@ func (q *Queries) InsertCaptainDraftIfAbsent(ctx context.Context, arg InsertCapt
 		&i.Status,
 		&i.BufferPostID,
 		&i.Note,
+		&i.ExternalLink,
 	)
 	return i, err
 }
@@ -149,8 +150,53 @@ func (q *Queries) InviteCrewMember(ctx context.Context, arg InviteCrewMemberPara
 	return result.RowsAffected(), nil
 }
 
+const listCrewPostsByLaunch = `-- name: ListCrewPostsByLaunch :many
+SELECT d.id, d.crew_member_id, d.channel_id, d.network, d.status, d.external_link
+FROM crew_drafts d
+JOIN crew_members m ON m.id = d.crew_member_id
+WHERE m.launch_id = $1 AND d.buffer_post_id IS NOT NULL
+ORDER BY d.crew_member_id, d.network
+`
+
+type ListCrewPostsByLaunchRow struct {
+	ID           uuid.UUID `json:"id"`
+	CrewMemberID uuid.UUID `json:"crew_member_id"`
+	ChannelID    string    `json:"channel_id"`
+	Network      string    `json:"network"`
+	Status       string    `json:"status"`
+	ExternalLink string    `json:"external_link"`
+}
+
+// Every crew post Buffer holds for the launch, for the captain's crew rows.
+func (q *Queries) ListCrewPostsByLaunch(ctx context.Context, launchID uuid.UUID) ([]ListCrewPostsByLaunchRow, error) {
+	rows, err := q.db.Query(ctx, listCrewPostsByLaunch, launchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCrewPostsByLaunchRow
+	for rows.Next() {
+		var i ListCrewPostsByLaunchRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CrewMemberID,
+			&i.ChannelID,
+			&i.Network,
+			&i.Status,
+			&i.ExternalLink,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLaunchesForUser = `-- name: ListLaunchesForUser :many
-SELECT l.id, l.owner_user_id, l.repo_id, l.source, l.status, l.title, l.summary, l.release_tag, l.release_url, l.headline_changes, l.roles, l.launch_at, l.window_minutes, l.open_token_hash, l.crew_cap, l.card_preset, l.hero_asset_id, l.created_at, l.open_count, l.open_token_enc, l.release_id FROM launches l
+SELECT l.id, l.owner_user_id, l.repo_id, l.source, l.status, l.title, l.summary, l.release_tag, l.release_url, l.headline_changes, l.roles, l.launch_at, l.window_minutes, l.open_token_hash, l.crew_cap, l.card_preset, l.hero_asset_id, l.created_at, l.open_count, l.open_token_enc, l.release_id, l.qr_logo FROM launches l
 LEFT JOIN repos r ON r.id = l.repo_id
 WHERE (l.owner_user_id = $1 OR r.owner_user_id = $1) AND l.status <> 'deleted'
 ORDER BY l.created_at DESC
@@ -192,6 +238,7 @@ func (q *Queries) ListLaunchesForUser(ctx context.Context, userID uuid.NullUUID)
 			&i.Launch.OpenCount,
 			&i.Launch.OpenTokenEnc,
 			&i.Launch.ReleaseID,
+			&i.Launch.QrLogo,
 		); err != nil {
 			return nil, err
 		}
@@ -245,6 +292,25 @@ func (q *Queries) ListQueuedCrewDraftsByLaunch(ctx context.Context, launchID uui
 	return items, nil
 }
 
+const markCaptainDraftFromBuffer = `-- name: MarkCaptainDraftFromBuffer :execrows
+UPDATE captain_drafts SET status = $2, external_link = $3 WHERE id = $1 AND status = 'queued'
+`
+
+type MarkCaptainDraftFromBufferParams struct {
+	ID           uuid.UUID `json:"id"`
+	Status       string    `json:"status"`
+	ExternalLink string    `json:"external_link"`
+}
+
+// The poll's verdict on a queued captain post; a post no longer queued is left alone.
+func (q *Queries) MarkCaptainDraftFromBuffer(ctx context.Context, arg MarkCaptainDraftFromBufferParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markCaptainDraftFromBuffer, arg.ID, arg.Status, arg.ExternalLink)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const markCrewMemberPosted = `-- name: MarkCrewMemberPosted :exec
 UPDATE crew_members SET state = 'posted' WHERE id = $1
 `
@@ -274,6 +340,22 @@ UPDATE crew_members SET comment_failed = true WHERE id = $1
 
 func (q *Queries) SetCrewCommentFailed(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, setCrewCommentFailed, id)
+	return err
+}
+
+const setCrewDraftPosted = `-- name: SetCrewDraftPosted :exec
+UPDATE crew_drafts SET status = $2, external_link = $3 WHERE id = $1
+`
+
+type SetCrewDraftPostedParams struct {
+	ID           uuid.UUID `json:"id"`
+	Status       string    `json:"status"`
+	ExternalLink string    `json:"external_link"`
+}
+
+// The poll's verdict on a queued crew post, with its link on the network once sent.
+func (q *Queries) SetCrewDraftPosted(ctx context.Context, arg SetCrewDraftPostedParams) error {
+	_, err := q.db.Exec(ctx, setCrewDraftPosted, arg.ID, arg.Status, arg.ExternalLink)
 	return err
 }
 

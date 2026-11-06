@@ -18,10 +18,18 @@ import (
 	"github.com/shubham-tomar/launchcrew/internal/db/sqlc"
 )
 
-// Channel is a connected social account.
+// Channel is a connected social account. Type is Buffer's channel type
+// (profile, page, business, account, group or channel), lowercase.
 type Channel struct {
 	ID, Name, Service, Avatar string
+	Type                      string
 	Locked, Paused, Connected bool
+}
+
+// RemindersOnly reports a channel Buffer cannot publish to by itself: an
+// Instagram personal profile, which only takes reminder (notification) posts.
+func RemindersOnly(ch Channel) bool {
+	return strings.ToLower(ch.Service) == "instagram" && strings.ToLower(ch.Type) == "profile"
 }
 
 // ServiceRules is what a service accepts for a regular post.
@@ -38,31 +46,40 @@ type Config struct {
 	Fallback bool `json:",omitempty"`
 }
 
-// Post is a Buffer post.
+// Post is a Buffer post. ExternalLink is its URL on the network once sent.
 type Post struct {
 	ID, ChannelID, Text, Status string
+	ExternalLink                string
 	SentAt, CreatedAt           time.Time
 }
 
 // CreatePostInput describes one post. Mode is addToQueue or customScheduled
 // (DueAt required). Thread, when set, is the whole thread in order, root
-// first; Text defaults to Thread[0].
+// first; Text defaults to Thread[0]. Notification asks Buffer to remind the
+// person to publish by hand instead of publishing itself, which is what an
+// Instagram personal profile needs.
 type CreatePostInput struct {
 	ChannelID, Text string
 	Mode            string
 	DueAt           *time.Time
 	SaveToDraft     bool
+	Notification    bool
 	AssetURLs       []string
 	FirstComment    string
 	Thread          []string
 }
 
-// CreatePostResult reports the created post.
+// CreatePostResult reports the created post. Notification is set when Buffer
+// will remind the person to publish it rather than post it for them.
 type CreatePostResult struct {
 	PostID       string
 	SavedAsDraft bool
+	Notification bool
 	Note         string
 }
+
+// NotifyNote is the note on a post Buffer will send a reminder for.
+const NotifyNote = "Buffer will notify you to post this one yourself"
 
 // Limit is one channel's daily posting limit status. Limit nil means unlimited.
 type Limit struct {
@@ -104,7 +121,7 @@ func (c *Client) Channels(ctx context.Context, connID uuid.UUID) ([]Channel, err
 	}
 	var out struct {
 		Channels []struct {
-			ID, Name, Service, Avatar               string
+			ID, Name, Service, Avatar, Type         string
 			DisplayName                             *string
 			IsLocked, IsQueuePaused, IsDisconnected bool
 		}
@@ -119,7 +136,7 @@ func (c *Client) Channels(ctx context.Context, connID uuid.UUID) ([]Channel, err
 			name = *ch.DisplayName
 		}
 		chs = append(chs, Channel{
-			ID: ch.ID, Name: name, Service: strings.ToLower(ch.Service), Avatar: ch.Avatar,
+			ID: ch.ID, Name: name, Service: strings.ToLower(ch.Service), Avatar: ch.Avatar, Type: strings.ToLower(ch.Type),
 			Locked: ch.IsLocked, Paused: ch.IsQueuePaused, Connected: !ch.IsDisconnected,
 		})
 	}
@@ -281,6 +298,7 @@ func buildConfig(services []serviceConfig) Config {
 
 type postNode struct {
 	ID, ChannelID, Text, Status string
+	ExternalLink                *string
 	SentAt                      *time.Time
 	CreatedAt                   time.Time
 }
@@ -295,6 +313,9 @@ func (d postsData) posts() []Post {
 	out := make([]Post, 0, len(d.Posts.Edges))
 	for _, e := range d.Posts.Edges {
 		p := Post{ID: e.Node.ID, ChannelID: e.Node.ChannelID, Text: e.Node.Text, Status: e.Node.Status, CreatedAt: e.Node.CreatedAt}
+		if e.Node.ExternalLink != nil {
+			p.ExternalLink = *e.Node.ExternalLink
+		}
 		if e.Node.SentAt != nil {
 			p.SentAt = *e.Node.SentAt
 		}
@@ -345,25 +366,51 @@ func (c *Client) PostsCreatedBetween(ctx context.Context, connID uuid.UUID, chan
 }
 
 // CreatePost creates a post. If Buffer answers LimitReachedError, it retries
-// once as a draft and says so in Note.
+// once as a draft and says so in Note. If Buffer refuses because the channel
+// only takes reminder posts (an Instagram personal profile the channel list
+// did not flag), it retries once as a notification post and says so in Note.
 func (c *Client) CreatePost(ctx context.Context, connID uuid.UUID, in CreatePostInput) (CreatePostResult, error) {
 	input, err := c.postInput(ctx, connID, in)
 	if err != nil {
 		return CreatePostResult{}, err
 	}
+	res := CreatePostResult{SavedAsDraft: in.SaveToDraft, Notification: in.Notification}
+	if in.Notification {
+		res.Note = NotifyNote
+	}
 	id, err := c.createPost(ctx, connID, input)
+	var me *MutationError
+	if errors.As(err, &me) && !in.Notification && wantsReminder(me.Message) {
+		input["schedulingType"] = "notification"
+		res.Notification, res.Note = true, NotifyNote
+		id, err = c.createPost(ctx, connID, input)
+	}
 	var lre *LimitReachedError
 	if errors.As(err, &lre) && !in.SaveToDraft {
 		input["saveToDraft"] = true
 		if id, err = c.createPost(ctx, connID, input); err != nil {
 			return CreatePostResult{}, err
 		}
-		return CreatePostResult{PostID: id, SavedAsDraft: true, Note: DraftNote}, nil
+		res.PostID, res.SavedAsDraft, res.Note = id, true, DraftNote
+		return res, nil
 	}
 	if err != nil {
 		return CreatePostResult{}, err
 	}
-	return CreatePostResult{PostID: id, SavedAsDraft: in.SaveToDraft}, nil
+	res.PostID = id
+	return res, nil
+}
+
+// wantsReminder reports a refusal that says the channel cannot publish by
+// itself and needs a reminder (notification) post instead.
+func wantsReminder(msg string) bool {
+	m := strings.ToLower(msg)
+	for _, w := range []string{"notification", "reminder", "personal"} {
+		if strings.Contains(m, w) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) createPost(ctx context.Context, connID uuid.UUID, input map[string]any) (string, error) {
@@ -402,9 +449,13 @@ func (c *Client) postInput(ctx context.Context, connID uuid.UUID, in CreatePostI
 	if mode == "" {
 		mode = "addToQueue"
 	}
+	scheduling := "automatic"
+	if in.Notification {
+		scheduling = "notification"
+	}
 	input := map[string]any{
 		"channelId": in.ChannelID, "text": text,
-		"schedulingType": "automatic", "mode": mode,
+		"schedulingType": scheduling, "mode": mode,
 	}
 	switch mode {
 	case "addToQueue":
@@ -419,15 +470,17 @@ func (c *Client) postInput(ctx context.Context, connID uuid.UUID, in CreatePostI
 	if in.SaveToDraft {
 		input["saveToDraft"] = true
 	}
-	if len(in.AssetURLs) > 0 {
-		assets := make([]map[string]any, 0, len(in.AssetURLs))
-		for _, u := range in.AssetURLs {
-			kind := "image"
-			if slices.Contains(videoExts, strings.ToLower(path.Ext(strings.SplitN(u, "?", 2)[0]))) {
-				kind = "video"
-			}
-			assets = append(assets, map[string]any{kind: map[string]any{"url": u}})
+	var assets []map[string]any
+	for _, u := range in.AssetURLs {
+		kind := "image"
+		if slices.Contains(videoExts, strings.ToLower(path.Ext(strings.SplitN(u, "?", 2)[0]))) {
+			kind = "video"
 		}
+		assets = append(assets, map[string]any{kind: map[string]any{"url": u}})
+	}
+	// For a thread Buffer reads the thread items, not the top-level fields,
+	// so the card goes on the root item; a top-level copy is dropped silently.
+	if len(assets) > 0 && len(in.Thread) == 0 {
 		input["assets"] = assets
 	}
 	if in.FirstComment != "" || len(in.Thread) > 0 {
@@ -445,8 +498,12 @@ func (c *Client) postInput(ctx context.Context, connID uuid.UUID, in CreatePostI
 		}
 		if len(in.Thread) > 0 {
 			items := make([]map[string]any, 0, len(in.Thread))
-			for _, t := range in.Thread {
-				items = append(items, map[string]any{"text": t})
+			for i, t := range in.Thread {
+				item := map[string]any{"text": t}
+				if i == 0 && len(assets) > 0 {
+					item["assets"] = assets
+				}
+				items = append(items, item)
 			}
 			md["thread"] = items
 		}

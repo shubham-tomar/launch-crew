@@ -111,7 +111,7 @@ func (q *Queries) DeleteUntouchedOpened(ctx context.Context, openedAt pgtype.Tim
 }
 
 const getCrewDraft = `-- name: GetCrewDraft :one
-SELECT id, crew_member_id, channel_id, network, text, thread, first_comment, asset_id, hook_type, overlap_score, flagged, status, buffer_post_id, due_at, edited, created_at, from_model FROM crew_drafts WHERE id = $1
+SELECT id, crew_member_id, channel_id, network, text, thread, first_comment, asset_id, hook_type, overlap_score, flagged, status, buffer_post_id, due_at, edited, created_at, from_model, external_link FROM crew_drafts WHERE id = $1
 `
 
 func (q *Queries) GetCrewDraft(ctx context.Context, id uuid.UUID) (CrewDraft, error) {
@@ -135,12 +135,13 @@ func (q *Queries) GetCrewDraft(ctx context.Context, id uuid.UUID) (CrewDraft, er
 		&i.Edited,
 		&i.CreatedAt,
 		&i.FromModel,
+		&i.ExternalLink,
 	)
 	return i, err
 }
 
 const getCrewMember = `-- name: GetCrewMember :one
-SELECT id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed FROM crew_members WHERE id = $1
+SELECT id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed, prs, comment_retries FROM crew_members WHERE id = $1
 `
 
 func (q *Queries) GetCrewMember(ctx context.Context, id uuid.UUID) (CrewMember, error) {
@@ -168,12 +169,14 @@ func (q *Queries) GetCrewMember(ctx context.Context, id uuid.UUID) (CrewMember, 
 		&i.VoicedAt,
 		&i.InviteTokenEnc,
 		&i.CommentFailed,
+		&i.Prs,
+		&i.CommentRetries,
 	)
 	return i, err
 }
 
 const getCrewMemberByAccount = `-- name: GetCrewMemberByAccount :one
-SELECT id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed FROM crew_members WHERE launch_id = $1 AND buffer_account_id = $2
+SELECT id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed, prs, comment_retries FROM crew_members WHERE launch_id = $1 AND buffer_account_id = $2
 `
 
 type GetCrewMemberByAccountParams struct {
@@ -206,12 +209,14 @@ func (q *Queries) GetCrewMemberByAccount(ctx context.Context, arg GetCrewMemberB
 		&i.VoicedAt,
 		&i.InviteTokenEnc,
 		&i.CommentFailed,
+		&i.Prs,
+		&i.CommentRetries,
 	)
 	return i, err
 }
 
 const getCrewMemberByGitHubUser = `-- name: GetCrewMemberByGitHubUser :one
-SELECT id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed FROM crew_members WHERE launch_id = $1 AND github_user_id = $2
+SELECT id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed, prs, comment_retries FROM crew_members WHERE launch_id = $1 AND github_user_id = $2
 `
 
 type GetCrewMemberByGitHubUserParams struct {
@@ -244,12 +249,14 @@ func (q *Queries) GetCrewMemberByGitHubUser(ctx context.Context, arg GetCrewMemb
 		&i.VoicedAt,
 		&i.InviteTokenEnc,
 		&i.CommentFailed,
+		&i.Prs,
+		&i.CommentRetries,
 	)
 	return i, err
 }
 
 const getCrewMemberByTokenHash = `-- name: GetCrewMemberByTokenHash :one
-SELECT id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed FROM crew_members WHERE invite_token_hash = $1
+SELECT id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed, prs, comment_retries FROM crew_members WHERE invite_token_hash = $1
 `
 
 func (q *Queries) GetCrewMemberByTokenHash(ctx context.Context, inviteTokenHash []byte) (CrewMember, error) {
@@ -277,6 +284,8 @@ func (q *Queries) GetCrewMemberByTokenHash(ctx context.Context, inviteTokenHash 
 		&i.VoicedAt,
 		&i.InviteTokenEnc,
 		&i.CommentFailed,
+		&i.Prs,
+		&i.CommentRetries,
 	)
 	return i, err
 }
@@ -330,7 +339,7 @@ const insertCrewDraftIfAbsent = `-- name: InsertCrewDraftIfAbsent :one
 INSERT INTO crew_drafts (crew_member_id, channel_id, network, text, thread, first_comment, hook_type, overlap_score)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (crew_member_id, channel_id) DO NOTHING
-RETURNING id, crew_member_id, channel_id, network, text, thread, first_comment, asset_id, hook_type, overlap_score, flagged, status, buffer_post_id, due_at, edited, created_at, from_model
+RETURNING id, crew_member_id, channel_id, network, text, thread, first_comment, asset_id, hook_type, overlap_score, flagged, status, buffer_post_id, due_at, edited, created_at, from_model, external_link
 `
 
 type InsertCrewDraftIfAbsentParams struct {
@@ -374,6 +383,7 @@ func (q *Queries) InsertCrewDraftIfAbsent(ctx context.Context, arg InsertCrewDra
 		&i.Edited,
 		&i.CreatedAt,
 		&i.FromModel,
+		&i.ExternalLink,
 	)
 	return i, err
 }
@@ -383,7 +393,7 @@ INSERT INTO crew_members
     (launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title,
      invite_token_hash, state, pr_number, pr_title, token_expires_at, opened_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-RETURNING id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed
+RETURNING id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed, prs, comment_retries
 `
 
 type InsertCrewMemberParams struct {
@@ -441,6 +451,8 @@ func (q *Queries) InsertCrewMember(ctx context.Context, arg InsertCrewMemberPara
 		&i.VoicedAt,
 		&i.InviteTokenEnc,
 		&i.CommentFailed,
+		&i.Prs,
+		&i.CommentRetries,
 	)
 	return i, err
 }
@@ -478,7 +490,7 @@ func (q *Queries) InsertPostAttempt(ctx context.Context, arg InsertPostAttemptPa
 }
 
 const listCrewByLaunch = `-- name: ListCrewByLaunch :many
-SELECT id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed FROM crew_members WHERE launch_id = $1 ORDER BY opened_at NULLS LAST, id
+SELECT id, launch_id, user_id, buffer_account_id, github_user_id, role, role_hint, talk_title, invite_token_hash, state, pr_number, pr_title, pr_comment_id, voice_profile_id, neutral_draft, card_asset_id, opened_at, token_expires_at, voiced_at, invite_token_enc, comment_failed, prs, comment_retries FROM crew_members WHERE launch_id = $1 ORDER BY opened_at NULLS LAST, id
 `
 
 func (q *Queries) ListCrewByLaunch(ctx context.Context, launchID uuid.UUID) ([]CrewMember, error) {
@@ -512,6 +524,8 @@ func (q *Queries) ListCrewByLaunch(ctx context.Context, launchID uuid.UUID) ([]C
 			&i.VoicedAt,
 			&i.InviteTokenEnc,
 			&i.CommentFailed,
+			&i.Prs,
+			&i.CommentRetries,
 		); err != nil {
 			return nil, err
 		}
@@ -524,7 +538,7 @@ func (q *Queries) ListCrewByLaunch(ctx context.Context, launchID uuid.UUID) ([]C
 }
 
 const listCrewDrafts = `-- name: ListCrewDrafts :many
-SELECT id, crew_member_id, channel_id, network, text, thread, first_comment, asset_id, hook_type, overlap_score, flagged, status, buffer_post_id, due_at, edited, created_at, from_model FROM crew_drafts WHERE crew_member_id = $1 ORDER BY channel_id
+SELECT id, crew_member_id, channel_id, network, text, thread, first_comment, asset_id, hook_type, overlap_score, flagged, status, buffer_post_id, due_at, edited, created_at, from_model, external_link FROM crew_drafts WHERE crew_member_id = $1 ORDER BY channel_id
 `
 
 func (q *Queries) ListCrewDrafts(ctx context.Context, crewMemberID uuid.UUID) ([]CrewDraft, error) {
@@ -554,6 +568,7 @@ func (q *Queries) ListCrewDrafts(ctx context.Context, crewMemberID uuid.UUID) ([
 			&i.Edited,
 			&i.CreatedAt,
 			&i.FromModel,
+			&i.ExternalLink,
 		); err != nil {
 			return nil, err
 		}
@@ -975,7 +990,7 @@ ON CONFLICT (crew_member_id, channel_id) DO UPDATE SET
     first_comment = EXCLUDED.first_comment, asset_id = EXCLUDED.asset_id,
     hook_type = EXCLUDED.hook_type, overlap_score = EXCLUDED.overlap_score,
     flagged = EXCLUDED.flagged, edited = false
-RETURNING id, crew_member_id, channel_id, network, text, thread, first_comment, asset_id, hook_type, overlap_score, flagged, status, buffer_post_id, due_at, edited, created_at, from_model
+RETURNING id, crew_member_id, channel_id, network, text, thread, first_comment, asset_id, hook_type, overlap_score, flagged, status, buffer_post_id, due_at, edited, created_at, from_model, external_link
 `
 
 type UpsertCrewDraftParams struct {
@@ -1023,6 +1038,7 @@ func (q *Queries) UpsertCrewDraft(ctx context.Context, arg UpsertCrewDraftParams
 		&i.Edited,
 		&i.CreatedAt,
 		&i.FromModel,
+		&i.ExternalLink,
 	)
 	return i, err
 }

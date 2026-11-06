@@ -67,3 +67,19 @@ SELECT sqlc.embed(l) FROM launches l
 LEFT JOIN repos r ON r.id = l.repo_id
 WHERE (l.owner_user_id = sqlc.arg(user_id) OR r.owner_user_id = sqlc.arg(user_id)) AND l.status <> 'deleted'
 ORDER BY l.created_at DESC;
+
+-- name: ListCrewPostsByLaunch :many
+-- Every crew post Buffer holds for the launch, for the captain's crew rows.
+SELECT d.id, d.crew_member_id, d.channel_id, d.network, d.status, d.external_link
+FROM crew_drafts d
+JOIN crew_members m ON m.id = d.crew_member_id
+WHERE m.launch_id = $1 AND d.buffer_post_id IS NOT NULL
+ORDER BY d.crew_member_id, d.network;
+
+-- name: SetCrewDraftPosted :exec
+-- The poll's verdict on a queued crew post, with its link on the network once sent.
+UPDATE crew_drafts SET status = $2, external_link = $3 WHERE id = $1;
+
+-- name: MarkCaptainDraftFromBuffer :execrows
+-- The poll's verdict on a queued captain post; a post no longer queued is left alone.
+UPDATE captain_drafts SET status = $2, external_link = $3 WHERE id = $1 AND status = 'queued';

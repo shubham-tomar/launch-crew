@@ -170,6 +170,9 @@ func withCrew(ctx context.Context, d Deps, ls []sqlc.Launch, out []Summary) erro
 		return err
 	}
 
+	for _, gh := range captainGH {
+		ghIDs = append(ghIDs, gh)
+	}
 	logins := map[int64]string{}
 	if len(ghIDs) > 0 {
 		rows, err := d.Pool.Query(ctx, `SELECT github_user_id, login FROM github_identities WHERE github_user_id = ANY($1)`, ghIDs)
@@ -207,6 +210,11 @@ func withCrew(ctx context.Context, d Deps, ls []sqlc.Launch, out []Summary) erro
 		captain := int64(0)
 		if l.OwnerUserID.Valid {
 			captain = captainGH[l.OwnerUserID.UUID]
+		}
+		// The captain's name as the detail page shows it: their login, else the repo owner.
+		out[i].CaptainName = logins[captain]
+		if out[i].CaptainName == "" && out[i].Repo != "" {
+			out[i].CaptainName, _, _ = strings.Cut(out[i].Repo, "/")
 		}
 		var counts Counts
 		var people []crewPerson

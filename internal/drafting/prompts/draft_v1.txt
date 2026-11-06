@@ -17,7 +17,7 @@ Rules:
 - No lists of three things.
 - No stock emoji.
 - Use at most one hashtag, and only if the hashtag setting above is not "none".
-- Stay under {{.MaxChars}} characters.
+- Hard limit: the whole post, link included, must be under {{.MaxChars}} characters. Count them. One post, never a thread.
 - Return only the post text, with no quotes around it and no commentary.
 
 Network: {{.Network}}

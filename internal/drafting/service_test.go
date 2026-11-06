@@ -152,7 +152,7 @@ func TestServiceTimeoutShortBudget(t *testing.T) {
 	}
 }
 
-func TestServiceLintThenThreadOnTwitter(t *testing.T) {
+func TestServiceLintThenShortensOnTwitter(t *testing.T) {
 	first := "Tiling got a full rewrite — windows snap into place much faster now. " +
 		"Workspaces remember their layout between sessions. Mouse drag resizing finally respects gaps. " +
 		"Configuration reloads without restarting anything. Plugins can register custom keybindings freely. " +
@@ -161,38 +161,76 @@ func TestServiceLintThenThreadOnTwitter(t *testing.T) {
 	if len([]rune(second)) <= 280 {
 		t.Fatal("fixture too short")
 	}
+	third := "Tiling got a full rewrite in tuios v1.4: windows snap into place much faster now."
 	m := &stub{fn: func(_ context.Context, n int, _ DraftRequest) (Draft, error) {
-		if n == 1 {
-			return Draft{Text: first, FromModel: true}, nil
+		switch n {
+		case 1:
+			return Draft{Text: first, FromModel: true}, nil // an em dash tell
+		case 2:
+			return Draft{Text: second, FromModel: true}, nil // clean, but over 280
 		}
-		return Draft{Text: second, FromModel: true}, nil
+		return Draft{Text: third, FromModel: true}, nil
 	}}
 	req := testReq()
 	req.Network = Twitter
 	req.Rules = Rules{MaxChars: 280, Threads: true}
 	svc := &Service{Model: m}
 	res, err := svc.DraftFor(context.Background(), req, []string{"Quarterly gardening notes: tomatoes are ripe"})
-	if err != nil || m.calls != 2 || !res.Draft.FromModel || res.UsedTemplate {
+	if err != nil || m.calls != 3 || !res.Draft.FromModel || res.UsedTemplate {
 		t.Fatalf("err=%v calls=%d res=%+v", err, m.calls, res)
 	}
-	if len(res.Draft.Thread) < 2 || res.Draft.Thread[0] != res.Draft.Text {
+	// An X post is one post under the limit, never a thread the person did not ask for.
+	if len(res.Draft.Thread) != 0 || res.Draft.Text != third {
 		t.Fatalf("thread=%q text=%q", res.Draft.Thread, res.Draft.Text)
-	}
-	for _, p := range res.Draft.Thread {
-		if len([]rune(p)) > 280 {
-			t.Fatalf("part too long: %d", len([]rune(p)))
-		}
 	}
 	if res.Overlap >= 0.1 {
 		t.Fatalf("overlap %v", res.Overlap)
 	}
-	// Scoring the fitted text itself must be high, proving it is what was scored.
-	m.calls = 0
-	res2, _ := svc.DraftFor(context.Background(), req, []string{res.Draft.Text})
-	if res2.Overlap < 0.99 {
-		t.Fatalf("overlap vs fitted text %v", res2.Overlap)
+}
+
+func TestServiceRegeneratesAnOverLongDraftOnce(t *testing.T) {
+	long := strings.Repeat("Shipped a thing today. ", 30) // ~690 characters
+	m := &stub{fn: func(_ context.Context, n int, _ DraftRequest) (Draft, error) {
+		if n == 1 {
+			return Draft{Text: long}, nil
+		}
+		return Draft{Text: "tuios v1.4 is out with the window tiling rewrite."}, nil
+	}}
+	req := testReq()
+	req.Network, req.Rules = Twitter, Rules{MaxChars: 280, Threads: true, ImageOK: true}
+	res, err := (&Service{Model: m}).DraftFor(context.Background(), req, nil)
+	if err != nil || m.calls != 2 || res.UsedTemplate {
+		t.Fatalf("err=%v calls=%d res=%+v", err, m.calls, res)
 	}
-	if raw := TrigramOverlap(second, res.Draft.Text); raw >= 0.9 {
-		t.Fatalf("raw text would score the same: %v", raw)
+	if len(res.Draft.Thread) > 0 || len([]rune(res.Draft.Text)) > 280 {
+		t.Fatalf("draft = %+v, want one post under 280", res.Draft)
+	}
+	hint := strings.Join(m.reqs[1].Avoid, "|")
+	if !strings.Contains(hint, "do not: run past 280 characters") {
+		t.Fatalf("second request did not say how far over it was: %q", hint)
+	}
+}
+
+func TestServiceOverLongTwiceFallsBackToTemplate(t *testing.T) {
+	long := strings.Repeat("Shipped a thing today. ", 30)
+	m := &stub{fn: func(context.Context, int, DraftRequest) (Draft, error) { return Draft{Text: long}, nil }}
+	req := testReq()
+	req.Network, req.Rules = Twitter, Rules{MaxChars: 280, Threads: true, ImageOK: true}
+	res, err := (&Service{Model: m}).DraftFor(context.Background(), req, nil)
+	if err != nil || !res.UsedTemplate || m.calls != 2 {
+		t.Fatalf("err=%v calls=%d res=%+v", err, m.calls, res)
+	}
+	if len(res.Draft.Thread) > 0 || len([]rune(res.Draft.Text)) > 280 {
+		t.Fatalf("template draft = %+v, want one post under 280", res.Draft)
+	}
+}
+
+func TestOverByIgnoresALinkThatMovesToTheFirstComment(t *testing.T) {
+	text := strings.Repeat("word ", 55) + "https://example.com/a/very/long/release/notes/link/that/pushes/it/over"
+	if n := overBy(Draft{Text: text}, Rules{MaxChars: 300, LinkInFirstComment: true}); n != 0 {
+		t.Fatalf("overBy = %d, want 0 once the link moves out", n)
+	}
+	if n := overBy(Draft{Text: text}, Rules{MaxChars: 300}); n <= 0 {
+		t.Fatalf("overBy = %d, want over when the link stays", n)
 	}
 }

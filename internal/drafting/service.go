@@ -2,6 +2,7 @@ package drafting
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -25,6 +26,19 @@ type Result struct {
 	Overlap      float64
 	Flagged      bool
 	UsedTemplate bool
+}
+
+// overBy is how many characters a model draft runs past the limit once a
+// link that moves to the first comment is taken out; 0 when it fits.
+func overBy(d Draft, r Rules) int {
+	if r.MaxChars <= 0 {
+		return 0
+	}
+	probe := FitToRules(d, Rules{LinkInFirstComment: r.LinkInFirstComment})
+	if n := runeLen(probe.Text) - r.MaxChars; n > 0 {
+		return n
+	}
+	return 0
 }
 
 func maxOverlap(text string, recent []string) float64 {
@@ -72,7 +86,10 @@ func (s *Service) DraftFor(ctx context.Context, req DraftRequest, recent []strin
 	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 
-	// gen drafts with one hook, regenerating once if the text has tells.
+	// gen drafts with one hook, regenerating once if the text has tells and
+	// once more if it runs past the network's limit. A draft still over the
+	// limit is an error, so the template (which fits) is used instead of a
+	// post cut mid-sentence or split into a thread nobody asked for.
 	gen := func(hook HookType) (Draft, error) {
 		r := req
 		r.Hook = hook
@@ -88,6 +105,16 @@ func (s *Service) DraftFor(ctx context.Context, req DraftRequest, recent []strin
 			d, err = s.Model.Draft(ctx, r)
 			if err != nil {
 				return Draft{}, err
+			}
+		}
+		if n := overBy(d, req.Rules); n > 0 {
+			r.Avoid = append(append([]string(nil), r.Avoid...), fmt.Sprintf("do not: run past %d characters; the last draft was %d characters over, so cut it well short", req.Rules.MaxChars, n))
+			d, err = s.Model.Draft(ctx, r)
+			if err != nil {
+				return Draft{}, err
+			}
+			if n := overBy(d, req.Rules); n > 0 {
+				return Draft{}, fmt.Errorf("drafting: model draft %d characters over the limit twice", n)
 			}
 		}
 		d.Hook = hook

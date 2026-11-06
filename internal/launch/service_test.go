@@ -515,7 +515,7 @@ func TestCloseWindowAndPollMarkPosted(t *testing.T) {
 		}
 	}
 	e.buf.Handle("GetPostsCreatedBetween", map[string]any{"posts": map[string]any{"edges": []any{
-		map[string]any{"node": map[string]any{"id": "p-sent", "channelId": "a-x", "text": "hi", "status": "sent", "createdAt": time.Now().Format(time.RFC3339)}},
+		map[string]any{"node": map[string]any{"id": "p-sent", "channelId": "a-x", "text": "hi", "status": "sent", "externalLink": "https://x.com/alice/status/9", "createdAt": time.Now().Format(time.RFC3339)}},
 		map[string]any{"node": map[string]any{"id": "p-err", "channelId": "a-bsky", "text": "hi", "status": "error", "createdAt": time.Now().Format(time.RFC3339)}},
 	}}})
 
@@ -539,6 +539,24 @@ func TestCloseWindowAndPollMarkPosted(t *testing.T) {
 	}
 	if a := e.member(t, e.alice.ID); a.State != "posted" {
 		t.Fatalf("alice %s, want posted", a.State)
+	}
+	// The captain's crew row links to the sent post and names the failed one.
+	v, err := launch.Detail(e.ctx, e.deps, e.launch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var alice launch.CrewRow
+	for _, r := range v.Crew {
+		if r.ID == e.alice.ID {
+			alice = r
+		}
+	}
+	links := map[string]string{}
+	for _, p := range alice.Posts {
+		links[p.Status] = p.ExternalLink
+	}
+	if len(alice.Posts) != 2 || links["posted"] != "https://x.com/alice/status/9" || links["failed_in_buffer"] != "" {
+		t.Fatalf("alice's posts %+v", alice.Posts)
 	}
 	// Closing again is a no-op; a deleted launch is never reopened.
 	if err := launch.CloseWindowHandler(e.deps)(e.ctx, jobs.Job{Kind: jobs.CloseWindow, Payload: payload}); err != nil {

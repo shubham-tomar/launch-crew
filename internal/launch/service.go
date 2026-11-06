@@ -161,6 +161,8 @@ type Summary struct {
 	CrewTotal int `json:"crewTotal"`
 	// CrewInitials is up to five crew members' initials, people who are in first.
 	CrewInitials []string `json:"crewInitials"`
+	// CaptainName is the captain's GitHub login, else the repo owner, else "".
+	CaptainName string `json:"captainName"`
 }
 
 func summaryOf(l sqlc.Launch) Summary {

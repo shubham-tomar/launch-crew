@@ -13,6 +13,7 @@ const qChannels = `query GetChannels($organizationId: OrganizationId!) {
     isLocked
     isQueuePaused
     isDisconnected
+    type
   }
 }`
 
@@ -44,7 +45,7 @@ const qSentPosts = `query GetSentPosts($organizationId: OrganizationId!, $first:
       sort: [{ field: createdAt, direction: desc }]
     }
   ) {
-    edges { node { id channelId text status sentAt createdAt } }
+    edges { node { id channelId text status externalLink sentAt createdAt } }
   }
 }`
 
@@ -57,7 +58,7 @@ const qPostsCreatedBetween = `query GetPostsCreatedBetween($organizationId: Orga
       sort: [{ field: createdAt, direction: asc }]
     }
   ) {
-    edges { node { id channelId text status sentAt createdAt } }
+    edges { node { id channelId text status externalLink sentAt createdAt } }
   }
 }`
 

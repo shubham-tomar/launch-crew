@@ -51,6 +51,14 @@ type CaptainDraft struct {
 	Status       string        `json:"status"`
 	BufferPostID pgtype.Text   `json:"buffer_post_id"`
 	Note         string        `json:"note"`
+	ExternalLink string        `json:"external_link"`
+}
+
+type CaptainSetting struct {
+	UserID          uuid.UUID          `json:"user_id"`
+	CommentTemplate string             `json:"comment_template"`
+	DraftNotes      string             `json:"draft_notes"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type CrewDraft struct {
@@ -71,6 +79,7 @@ type CrewDraft struct {
 	Edited       bool               `json:"edited"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	FromModel    bool               `json:"from_model"`
+	ExternalLink string             `json:"external_link"`
 }
 
 type CrewMember struct {
@@ -95,6 +104,8 @@ type CrewMember struct {
 	VoicedAt        pgtype.Timestamptz `json:"voiced_at"`
 	InviteTokenEnc  []byte             `json:"invite_token_enc"`
 	CommentFailed   bool               `json:"comment_failed"`
+	Prs             []byte             `json:"prs"`
+	CommentRetries  int32              `json:"comment_retries"`
 }
 
 type GithubIdentity struct {
@@ -139,6 +150,7 @@ type Launch struct {
 	OpenCount       int32              `json:"open_count"`
 	OpenTokenEnc    []byte             `json:"open_token_enc"`
 	ReleaseID       pgtype.Int8        `json:"release_id"`
+	QrLogo          string             `json:"qr_logo"`
 }
 
 type LaunchAsset struct {

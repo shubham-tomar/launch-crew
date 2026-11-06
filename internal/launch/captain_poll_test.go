@@ -147,3 +147,36 @@ func TestPollStatusMarksCaptainPosts(t *testing.T) {
 		t.Fatalf("statuses %v, want x posted, li failed", got)
 	}
 }
+
+func TestPollKeepsTheSentPostsLink(t *testing.T) {
+	e := setup(t)
+	queuedCaptain(t, e)
+	e.buf.Handle("GetPostsCreatedBetween", map[string]any{"posts": map[string]any{"edges": []any{
+		map[string]any{"node": map[string]any{"id": "p-x", "channelId": "ch-x", "text": "t", "status": "sent",
+			"externalLink": "https://x.com/acme/status/1", "createdAt": time.Now().Format(time.RFC3339)}},
+		map[string]any{"node": map[string]any{"id": "p-li", "channelId": "ch-li", "text": "t", "status": "scheduled",
+			"createdAt": time.Now().Format(time.RFC3339)}},
+	}}})
+	v, err := launch.Detail(e.ctx, e.deps, e.launch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	links := map[string]string{}
+	for _, cd := range v.CaptainDrafts {
+		links[cd.ChannelID] = cd.ExternalLink
+	}
+	if links["ch-x"] != "https://x.com/acme/status/1" || links["ch-li"] != "" {
+		t.Fatalf("links %v", links)
+	}
+}
+
+func TestListNamesTheCaptain(t *testing.T) {
+	e := setup(t)
+	ls, err := launch.List(e.ctx, e.deps, e.owner.ID)
+	if err != nil || len(ls) != 1 {
+		t.Fatalf("list: %v %+v", err, ls)
+	}
+	if ls[0].CaptainName != "captain" {
+		t.Fatalf("captain name %q, want the GitHub login", ls[0].CaptainName)
+	}
+}

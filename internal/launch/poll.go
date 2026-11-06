@@ -24,25 +24,26 @@ const (
 )
 
 // pollOutcome is what Buffer's answer for a channel says about one queued
-// post: draftPosted (sent), draftFailed (errored, or gone) or "" to leave it
-// queued (still scheduled, or possibly beyond the page).
-func pollOutcome(posts []buffer.Post, postID string) string {
+// post: draftPosted (sent, with the post's link on the network when Buffer
+// knows it), draftFailed (errored, or gone) or "" to leave it queued (still
+// scheduled, or possibly beyond the page).
+func pollOutcome(posts []buffer.Post, postID string) (status, link string) {
 	for _, p := range posts {
 		if p.ID != postID {
 			continue
 		}
 		switch p.Status {
 		case "sent":
-			return draftPosted
+			return draftPosted, p.ExternalLink
 		case "error":
-			return draftFailed
+			return draftFailed, ""
 		}
-		return ""
+		return "", ""
 	}
 	if len(posts) < pageMax {
-		return draftFailed // deleted in Buffer
+		return draftFailed, "" // deleted in Buffer
 	}
-	return ""
+	return "", ""
 }
 
 // PollStatusHandler handles jobs.PollStatus, once after the window: each
@@ -99,11 +100,11 @@ func PollStatusHandler(d Deps) jobs.Handler {
 				byID[p.ID] = p
 			}
 			for _, r := range groups[k] {
-				status := pollOutcome(posts, r.BufferPostID.String)
+				status, link := pollOutcome(posts, r.BufferPostID.String)
 				if status == "" {
 					continue // still scheduled, or beyond the page
 				}
-				if err := d.Q.SetCrewDraftStatus(ctx, sqlc.SetCrewDraftStatusParams{ID: r.ID, Status: status}); err != nil {
+				if err := d.Q.SetCrewDraftPosted(ctx, sqlc.SetCrewDraftPostedParams{ID: r.ID, Status: status, ExternalLink: link}); err != nil {
 					errs = append(errs, err)
 					continue
 				}
@@ -194,14 +195,14 @@ func refreshCaptainDrafts(ctx context.Context, d Deps, l sqlc.Launch, conn *sqlc
 		if !ok {
 			continue
 		}
-		status := pollOutcome(posts, cd.BufferPostID.String)
+		status, link := pollOutcome(posts, cd.BufferPostID.String)
 		if status == draftFailed {
 			status = captainFailed
 		}
 		if status == "" {
 			continue
 		}
-		if _, err := d.Pool.Exec(ctx, `UPDATE captain_drafts SET status = $2 WHERE id = $1 AND status = 'queued'`, cd.ID, status); err != nil {
+		if _, err := d.Q.MarkCaptainDraftFromBuffer(ctx, sqlc.MarkCaptainDraftFromBufferParams{ID: cd.ID, Status: status, ExternalLink: link}); err != nil {
 			errs = append(errs, fmt.Errorf("mark captain draft: %w", err))
 		}
 	}

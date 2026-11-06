@@ -29,9 +29,19 @@ type CaptainDraftView struct {
 	ChannelName  string    `json:"channelName"`
 	Service      string    `json:"service"`
 	Text         string    `json:"text"`
-	Status       string    `json:"status"` // draft | sending | queued | failed
+	Status       string    `json:"status"` // draft | sending | queued | posted | failed | skipped
 	BufferPostID string    `json:"bufferPostId"`
 	Note         string    `json:"note"` // why it became a Buffer draft or failed
+	// ExternalLink is the post's URL on the network once it was sent.
+	ExternalLink string `json:"externalLink"`
+}
+
+// CrewPost is one post a crew member has in their Buffer for this launch.
+type CrewPost struct {
+	Network string `json:"network"`
+	Status  string `json:"status"` // queued | draft | posted | failed_in_buffer
+	// ExternalLink is the post's URL on the network once it was sent.
+	ExternalLink string `json:"externalLink"`
 }
 
 // CrewRow is one crew member. InviteURL is set once the member was invited.
@@ -45,6 +55,8 @@ type CrewRow struct {
 	// RetriesLeft is how many more times the failed comment can be retried.
 	RetriesLeft int    `json:"commentRetriesLeft"`
 	InviteURL   string `json:"inviteUrl,omitempty"`
+	// Posts are the member's posts Buffer holds, with links once sent.
+	Posts []CrewPost `json:"posts"`
 }
 
 // CheckView is one preflight check.
@@ -163,6 +175,7 @@ func Detail(ctx context.Context, d Deps, id uuid.UUID) (DetailView, error) {
 		v.CaptainDrafts = append(v.CaptainDrafts, CaptainDraftView{
 			ID: cd.ID, ChannelID: cd.ChannelID, ChannelName: ch.Name, Service: ch.Service,
 			Text: cd.Text, Status: cd.Status, BufferPostID: cd.BufferPostID.String, Note: cd.Note,
+			ExternalLink: cd.ExternalLink,
 		})
 	}
 	if l.Status == statusDraft {
@@ -194,13 +207,24 @@ func crewRows(ctx context.Context, d Deps, s *state) ([]CrewRow, Counts, error) 
 	if err != nil {
 		return nil, Counts{}, err
 	}
+	held, err := d.Q.ListCrewPostsByLaunch(ctx, s.l.ID)
+	if err != nil {
+		return nil, Counts{}, fmt.Errorf("launch: list crew posts: %w", err)
+	}
+	posts := map[uuid.UUID][]CrewPost{}
+	for _, p := range held {
+		posts[p.CrewMemberID] = append(posts[p.CrewMemberID], CrewPost{Network: p.Network, Status: p.Status, ExternalLink: p.ExternalLink})
+	}
 	out := []CrewRow{}
 	var n Counts
 	for _, m := range rows {
 		if s.isCaptain(m) {
 			continue // the captain is not their own crew
 		}
-		r := CrewRow{ID: m.ID, Role: m.Role, State: m.State, CommentFailed: m.CommentFailed, RetriesLeft: left[m.ID]}
+		r := CrewRow{ID: m.ID, Role: m.Role, State: m.State, CommentFailed: m.CommentFailed, RetriesLeft: left[m.ID], Posts: posts[m.ID]}
+		if r.Posts == nil {
+			r.Posts = []CrewPost{}
+		}
 		if m.GithubUserID.Valid {
 			r.Login = s.login(ctx, d, m.GithubUserID.Int64)
 		}

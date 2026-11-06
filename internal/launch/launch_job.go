@@ -163,7 +163,7 @@ func postCaptainDraft(ctx context.Context, d Deps, s *state, cd sqlc.CaptainDraf
 	at := s.l.LaunchAt.Time
 	in := buffer.CreatePostInput{
 		ChannelID: ch.ID, Text: cd.Text, Mode: "customScheduled", DueAt: &at,
-		FirstComment: cd.FirstComment.String,
+		FirstComment: cd.FirstComment.String, Notification: buffer.RemindersOnly(ch),
 	}
 	note := ""
 	if !at.After(d.now()) {
@@ -190,7 +190,7 @@ func postCaptainDraft(ctx context.Context, d Deps, s *state, cd sqlc.CaptainDraf
 	case err == nil && res.SavedAsDraft:
 		return setCaptainDraft(wctx, d, cd.ID, draftDraft, res.PostID, res.Note)
 	case err == nil:
-		return setCaptainDraft(wctx, d, cd.ID, draftQueued, res.PostID, note)
+		return setCaptainDraft(wctx, d, cd.ID, draftQueued, res.PostID, joinNotes(res.Note, note))
 	case errors.Is(err, buffer.ErrNeedsReconnect):
 		_ = setCaptainDraft(wctx, d, cd.ID, draftDraft, "", "")
 		return err
@@ -221,6 +221,17 @@ func adoptCaptainPost(ctx context.Context, d Deps, s *state, cd sqlc.CaptainDraf
 		}
 	}
 	return false, nil
+}
+
+// joinNotes reads two captain-facing notes as one sentence pair.
+func joinNotes(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	}
+	return a + "; " + b
 }
 
 func setCaptainDraft(ctx context.Context, d Deps, id uuid.UUID, status, postID, note string) error {
