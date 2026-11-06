@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	gh "github.com/google/go-github/v93/github"
 	"github.com/jackc/pgx/v5"
@@ -120,7 +121,7 @@ func sendComment(ctx context.Context, d Deps, s *state, p CommentsPayload) error
 		d.link("/s/"+tok), d.link("/settings?token="+tok))
 	id, _, err := comments.Upsert(ctx, d.GitHub, s.repo.InstallationID, owner, name, int(m.PrNumber.Int32), comments.Marker(s.l.ID), body)
 	if denied(err) {
-		log.Printf("launch %s: comment on #%d refused: %v", s.l.ID, m.PrNumber.Int32, err)
+		logRefusal(ctx, d, s, fmt.Sprintf("comment on #%d", m.PrNumber.Int32), err)
 		return d.Q.SetCrewCommentFailed(context.WithoutCancel(ctx), m.ID)
 	}
 	if err != nil {
@@ -179,7 +180,7 @@ func sendRollCall(ctx context.Context, d Deps, s *state) error {
 	}
 	wctx := context.WithoutCancel(ctx)
 	if denied(err) {
-		log.Printf("launch %s: roll call refused: %v", s.l.ID, err)
+		logRefusal(ctx, d, s, "roll call", err)
 		for _, m := range members {
 			if err := d.Q.SetCrewCommentFailed(wctx, m.ID); err != nil {
 				return err
@@ -202,6 +203,31 @@ func sendRollCall(ctx context.Context, d Deps, s *state) error {
 
 // denied reports GitHub refusing for lack of access: 403, or 404 for a
 // repository the installation can no longer see.
+// refusalDetail is what GitHub said about a refusal beyond its message: the
+// permissions it expected for the endpoint and the id to quote to support.
+func refusalDetail(err error) string {
+	var er *gh.ErrorResponse
+	if !errors.As(err, &er) || er.Response == nil {
+		return ""
+	}
+	h := er.Response.Header
+	return fmt.Sprintf("message=%q accepted_permissions=%q request_id=%s docs=%s",
+		er.Message, h.Get("X-Accepted-GitHub-Permissions"), h.Get("X-GitHub-Request-Id"), er.DocumentationURL)
+}
+
+// logRefusal logs why GitHub refused a write, with what it said and what the
+// installation it was sent through actually is, so a permission problem can be
+// told from a wrong app or installation without guessing.
+func logRefusal(ctx context.Context, d Deps, s *state, what string, err error) {
+	var who string
+	if s.repo != nil {
+		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		who = d.GitHub.DescribeInstallation(dctx, s.repo.InstallationID, s.repo.FullName)
+	}
+	log.Printf("launch %s: %s refused: %v | %s | %s", s.l.ID, what, err, refusalDetail(err), who)
+}
+
 func denied(err error) bool {
 	var er *gh.ErrorResponse
 	if errors.As(err, &er) && er.Response != nil {
