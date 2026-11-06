@@ -197,7 +197,7 @@ func suggestCrew(prs []drafting.PR, heads []drafting.Change) []CrewSuggestion {
 			return cmp.Compare(b.Number, a.Number)
 		})
 		for _, p := range own {
-			out[i].PRs = append(out[i].PRs, PRRef{Number: p.Number, Title: p.Title})
+			out[i].PRs = append(out[i].PRs, PRRef{Number: p.Number, Title: p.Title, Added: p.Added, Deleted: p.Deleted})
 		}
 		out[i].PRNumber, out[i].PRTitle = own[0].Number, own[0].Title
 	}

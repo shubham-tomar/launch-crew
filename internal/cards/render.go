@@ -23,37 +23,70 @@ import (
 
 const (
 	cardW, cardH = 1200, 630
-	pad          = 64
-	stubW        = 288
-	perfW        = 48
-	mainW        = cardW - stubW - perfW // 864
-	textW        = mainW - 2*pad         // 736
-	avatarSize   = 72
+	stubW        = 300
+	mainW        = cardW - stubW // 900: the perforation and notches sit here
+	padL, padR   = 64, 56
+	padT, padB   = 52, 44
+	textW        = mainW - padL - padR // 780
+	stubX        = mainW + 44          // stub content left edge
+	stubTextW    = cardW - 36 - stubX  // 220
+	avatarSize   = 112
 	maxAvatar    = 5 << 20
 	maxAvatarDim = 4096
 	notchR       = 24
+	cornerR      = 36
+	maxPRLines   = 5
 )
 
-// HTTPClient fetches avatars. Tests replace it.
+// HTTPClient fetches avatars and owner logos. Tests replace it.
 var HTTPClient = &http.Client{Timeout: 3 * time.Second}
 
-// ContributorCard is the card for one contributor's merged PR. Handle, Role,
-// PRNumber, PRCount, CrewCount, Date and Hero are optional. PRCount is how many
-// PRs the person has in the release; PRTitle is the first of them.
+// Diff colours: added and removed lines, as GitHub-flavoured as the ink field allows.
+const (
+	addedHex   = "#58D3AE"
+	deletedHex = "#FF8A74"
+)
+
+// PRLine is one change listed on a card.
+type PRLine struct {
+	Number int
+	Title  string
+}
+
+// Brand is the repo's look on the stub. Logo (a captain-set image) wins, then
+// LogoURL (the GitHub owner's avatar), then initials on an accent tile.
+// Accent is a hex colour; one too dark to read on the field falls back to the
+// preset's mark colour.
+type Brand struct {
+	Owner, LogoURL, Accent string
+	Logo                   image.Image
+}
+
+// ContributorCard is the card for one contributor in a release: who they are
+// up top, the release's headline changes in the middle, repo and version at
+// the foot. Everything but Name or Handle is optional. PRTitle and PRNumber
+// are the contributor's own first PR, listed when Release is empty.
 type ContributorCard struct {
 	Name, AvatarURL, Project, Version, PRTitle string
 	Handle, Role                               string
 	PRNumber, PRCount, CrewCount               int
+	Added, Deleted                             int
+	Release                                    []PRLine
+	ReleaseMore                                int
 	Date                                       time.Time
 	Hero                                       image.Image
+	Brand                                      Brand
 }
 
-// ReleaseCard is the card for a release. CrewCount, Date and Hero are optional.
+// ReleaseCard is the card for a release. Everything but Project is optional.
 type ReleaseCard struct {
 	Project, Version, Headline string
+	Release                    []PRLine
+	ReleaseMore                int
 	CrewCount                  int
 	Date                       time.Time
 	Hero                       image.Image
+	Brand                      Brand
 }
 
 func hexColor(h string) color.RGBA {
@@ -63,175 +96,428 @@ func hexColor(h string) color.RGBA {
 
 func setHex(dc *gg.Context, h string) { dc.SetColor(hexColor(h)) }
 
-// pass is what both card kinds reduce to before drawing.
-type pass struct {
-	eyebrow, title, meta, detail, repo string
-	// more is "and N more", kept on its own line under a clipped detail.
-	more                           string
-	stubLabel, stubValue, stubDate string
-	avatarURL                      string
-	hero                           image.Image
+// palette is a preset resolved against the repo accent.
+type palette struct {
+	Preset
+	accent, line, dim, body string
 }
 
-// Render draws a 1200x630 PNG boarding pass for a ContributorCard or ReleaseCard.
+func paletteOf(p Preset, accent string) palette {
+	a := p.Mark
+	if p.Eyebrow != "" {
+		a = p.Eyebrow
+	}
+	if ValidAccent(accent) && Contrast(accent, p.Field) >= 4.5 {
+		a = strings.ToUpper(accent)
+	}
+	return palette{Preset: p, accent: a,
+		line: blend(p.Type, p.Field, 0.16),
+		dim:  blend(p.Type, p.Field, 0.5),
+		body: blend(p.Type, p.Field, 0.85),
+	}
+}
+
+// ValidAccent reports a #RRGGBB colour.
+func ValidAccent(s string) bool {
+	if len(s) != 7 || s[0] != '#' {
+		return false
+	}
+	for _, c := range s[1:] {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
+		}
+	}
+	return true
+}
+
+// Render draws a 1200x630 PNG plane ticket for a ContributorCard or
+// ReleaseCard: rounded corners, half-circle notches at the perforation, and
+// fully transparent outside the ticket.
 func Render(c any, p Preset) ([]byte, error) {
 	fs, err := loadFonts()
 	if err != nil {
 		return nil, err
 	}
-	var d pass
+	var (
+		brand        Brand
+		project, ver string
+		crew         int
+		hero         image.Image
+		drawMain     func(*gg.Context, palette) error
+	)
 	switch v := c.(type) {
 	case ContributorCard:
-		d.title = titleText(fs.display, v.Name, "Contributor")
-		d.avatarURL, d.hero = v.AvatarURL, v.Hero
-		ref := prRef(v.PRNumber)
-		if v.PRCount > 1 {
-			ref = strconv.Itoa(v.PRCount) + " PRs"
-		}
-		d.eyebrow = joinDot(v.Version, ref)
-		if d.eyebrow == "" {
-			d.eyebrow = v.Project
-		}
-		role := v.Role
-		if strings.TrimSpace(role) == "" {
-			role = "Contributor"
-		}
-		handle := strings.TrimPrefix(strings.TrimSpace(v.Handle), "@")
-		if handle != "" {
-			handle = "@" + handle
-		}
-		d.meta = joinDot(handle, role)
-		d.detail = v.PRTitle
-		if v.PRCount > 1 && strings.TrimSpace(v.PRTitle) != "" {
-			d.more = "and " + strconv.Itoa(v.PRCount-1) + " more"
-		}
-		d.repo = v.Project
-		d.stubLabel, d.stubValue, d.stubDate = stubText(v.CrewCount, v.Version, v.Date)
+		brand, project, ver, crew, hero = v.Brand, v.Project, v.Version, v.CrewCount, v.Hero
+		drawMain = func(dc *gg.Context, pl palette) error { return drawContributor(dc, fs, pl, v) }
 	case ReleaseCard:
-		d.title = titleText(fs.display, v.Project, "Release")
-		d.hero = v.Hero
-		d.eyebrow = joinDot("Release", v.Version)
-		d.detail = v.Headline
-		d.stubLabel, d.stubValue, d.stubDate = stubText(v.CrewCount, v.Version, v.Date)
+		brand, project, ver, crew, hero = v.Brand, v.Project, v.Version, v.CrewCount, v.Hero
+		drawMain = func(dc *gg.Context, pl palette) error { return drawRelease(dc, fs, pl, v) }
 	default:
 		return nil, fmt.Errorf("cards: unsupported card type %T", c)
 	}
+	pl := paletteOf(p, brand.Accent)
 
 	dc := gg.NewContext(cardW, cardH)
 	setHex(dc, p.Field)
 	dc.Clear()
-	if d.hero != nil {
-		drawHero(dc, d.hero, p)
+	if hero != nil {
+		drawHero(dc, hero, p)
 	}
-
-	// Eyebrow: a small dot in the mark colour, then the uppercase line.
-	ef, err := face(fs.label, 27)
-	if err != nil {
-		return nil, err
-	}
-	dc.SetFontFace(ef)
-	setHex(dc, p.Mark)
-	dc.DrawCircle(pad+8, pad+14, 8)
-	dc.Fill()
-	setHex(dc, p.eyebrow())
-	eyebrow := ellipsize(ef, strings.ToUpper(keepGlyphs(fs.label, d.eyebrow)), textW-28)
-	dc.DrawString(eyebrow, pad+28, pad+24)
-
-	// Name: one line at 80px, else wrapped at 64px to two lines.
-	lines, size := fitTitle(fs.display, d.title, textW)
-	tf, err := face(fs.display, size)
-	if err != nil {
-		return nil, err
-	}
-	dc.SetFontFace(tf)
-	setHex(dc, p.Type)
-	lh := size * 1.06
-	y := 150.0 + size*0.8
-	for _, l := range lines {
-		dc.DrawString(l, pad, y)
-		y += lh
-	}
-	y = y - lh + 34
-
-	// What they shipped: up to two lines of body text.
-	bf, err := face(fs.body, 32)
-	if err != nil {
-		return nil, err
-	}
-	dc.SetFontFace(bf)
-	setHex(dc, blend(p.Type, p.Field, 0.9))
-	if detail := keepGlyphs(fs.body, d.detail); detail != "" {
-		lines := wrap(bf, detail, textW, 2)
-		if d.more != "" { // first title on one line, then "and N more"
-			lines = append(wrap(bf, detail, textW, 1), d.more)
-		}
-		for _, l := range lines {
-			dc.DrawString(l, pad, y+26)
-			y += 44
-		}
-	}
-
-	// Divider and the bottom row: avatar, handle and role, repo.
-	const rowY = 482
-	dc.SetLineWidth(3)
-	setHex(dc, blend(p.Type, p.Field, 0.18))
-	dc.DrawLine(pad, rowY-22, mainW-pad, rowY-22)
-	dc.Stroke()
-	drawAvatar(dc, d.avatarURL, p, pad+avatarSize/2.0, rowY+avatarSize/2.0-8, avatarSize/2.0)
-	tx := float64(pad + avatarSize + 24)
-	avail := float64(mainW-pad) - tx
-	mf, err := face(fs.body, 30)
-	if err != nil {
-		return nil, err
-	}
-	rf, err := face(fs.body, 26)
-	if err != nil {
-		return nil, err
-	}
-	meta, repo := keepGlyphs(fs.body, d.meta), keepGlyphs(fs.body, d.repo)
-	switch {
-	case meta != "" && repo != "":
-		dc.SetFontFace(mf)
-		setHex(dc, p.muted())
-		dc.DrawString(ellipsize(mf, meta, avail), tx, rowY+30-8)
-		dc.SetFontFace(rf)
-		setHex(dc, blend(p.Type, p.Field, 0.5))
-		dc.DrawString(ellipsize(rf, repo, avail), tx, rowY+66-8)
-	case meta != "" || repo != "":
-		t, f := meta, mf
-		if t == "" {
-			t, f = repo, rf
-		}
-		dc.SetFontFace(f)
-		setHex(dc, p.muted())
-		dc.DrawString(ellipsize(f, t, avail), tx, rowY+avatarSize/2.0+10-8)
-	}
-
-	// Perforation: dashed line with a notch cut at the top and bottom edge.
-	px := float64(mainW) + perfW/2.0
-	setHex(dc, blend(p.Type, p.Field, 0.22))
-	dc.SetLineWidth(5)
-	dc.SetDash(15, 11)
-	dc.DrawLine(px, notchR+14, px, cardH-notchR-14)
+	// Perforation: a dashed line just inside the main half's right edge.
+	setHex(dc, blend(p.Type, p.Field, 0.2))
+	dc.SetLineWidth(4)
+	dc.SetDash(12, 10)
+	dc.DrawLine(mainW-2, 40, mainW-2, cardH-40)
 	dc.Stroke()
 	dc.SetDash()
-	setHex(dc, ground)
-	dc.DrawCircle(px, 0, notchR)
-	dc.Fill()
-	dc.DrawCircle(px, cardH, notchR)
-	dc.Fill()
 
-	if err := drawStub(dc, fs, p, d); err != nil {
+	if err := drawMain(dc, pl); err != nil {
 		return nil, err
 	}
-	return encode(dc.Image())
+	if err := drawStub(dc, fs, pl, brand, project, ver, crew); err != nil {
+		return nil, err
+	}
+	return encode(ticket(dc.Image()))
 }
 
-func prRef(n int) string {
-	if n <= 0 {
-		return ""
+// drawContributor is board H: the person, the release's top changes, then
+// repo and version over the release date.
+func drawContributor(dc *gg.Context, fs fontSet, pl palette, v ContributorCard) error {
+	handle := strings.TrimPrefix(strings.TrimSpace(v.Handle), "@")
+	name := keepGlyphs(fs.display, v.Name)
+	if name == "" {
+		name = keepGlyphs(fs.display, handle)
 	}
-	return "PR #" + strconv.Itoa(n)
+	if name == "" {
+		name = "Contributor"
+	}
+	role := strings.TrimSpace(v.Role)
+	if role == "" {
+		role = "Contributor"
+	}
+
+	// Avatar with an accent ring, vertically centred on the text block.
+	const top = padT
+	cx, cy := float64(padL+avatarSize/2), float64(top+66)
+	setHex(dc, pl.accent)
+	dc.DrawCircle(cx, cy, avatarSize/2+4)
+	dc.Fill()
+	drawAvatar(dc, v.AvatarURL, pl, initials(name), cx, cy, avatarSize/2)
+
+	tx := float64(padL + avatarSize + 28)
+	tw := float64(mainW-padR) - tx
+	// Eyebrow: the GitHub mark, then the role in caps.
+	ef := must(face(fs.label, 22))
+	drawGitHubMark(dc, tx, top+2, 24, pl.accent)
+	dc.SetFontFace(ef)
+	setHex(dc, pl.accent)
+	dc.DrawString(ellipsize(ef, strings.ToUpper(keepGlyphs(fs.label, role)), tw-36), tx+36, top+22)
+	// Name: 56px, shrinking to 44 before it ellipsizes.
+	nf := fitFace(fs.display, name, tw, 56, 44)
+	dc.SetFontFace(nf)
+	setHex(dc, pl.Type)
+	dc.DrawString(ellipsize(nf, name, tw), tx, top+86)
+	// Meta: @handle | N PRs +a −d
+	mf := must(face(fs.body, 24))
+	monof := must(face(fs.mono, 24))
+	x, y := tx, float64(top+124)
+	put := func(f font.Face, hex, s string) {
+		if s == "" || x >= tx+tw {
+			return
+		}
+		dc.SetFontFace(f)
+		setHex(dc, hex)
+		s = ellipsize(f, s, tx+tw-x)
+		dc.DrawString(s, x, y)
+		x += textWidth(f, s) + 14
+	}
+	if handle != "" {
+		put(mf, pl.muted(), "@"+keepGlyphs(fs.body, handle))
+	}
+	count := v.PRCount
+	if count == 0 && (v.PRNumber > 0 || strings.TrimSpace(v.PRTitle) != "") {
+		count = 1
+	}
+	if count > 0 || v.Added+v.Deleted > 0 {
+		if handle != "" {
+			put(mf, pl.line, "|")
+		}
+	}
+	if count > 0 {
+		put(mf, pl.muted(), plural(count, "PR", "PRs"))
+	}
+	if v.Added+v.Deleted > 0 {
+		put(monof, addedHex, "+"+strconv.Itoa(v.Added))
+		put(monof, deletedHex, minus(fs.mono)+strconv.Itoa(v.Deleted))
+	}
+
+	// Middle: what shipped in the release.
+	lines, more := v.Release, v.ReleaseMore
+	label := "In this release"
+	if len(lines) == 0 && strings.TrimSpace(v.PRTitle) != "" {
+		lines, label = []PRLine{{Number: v.PRNumber, Title: v.PRTitle}}, "Shipped"
+		if v.PRCount > 1 {
+			more = v.PRCount - 1
+		}
+	}
+	const footY = cardH - padB - 66 // the divider
+	drawPRList(dc, fs, pl, label, lines, more, float64(top+124), footY)
+
+	// Foot: repo and version, the release date on the right.
+	dc.SetLineWidth(3)
+	setHex(dc, pl.line)
+	dc.DrawLine(padL, footY, mainW-padR, footY)
+	dc.Stroke()
+	right := 0.0
+	if !v.Date.IsZero() {
+		df := must(face(fs.body, 22))
+		s := "Released " + v.Date.Format("02 Jan 2006")
+		right = textWidth(df, s) + 20
+		dc.SetFontFace(df)
+		setHex(dc, pl.dim)
+		dc.DrawStringAnchored(s, mainW-padR, cardH-padB-6, 1, 0)
+	}
+	ff := must(face(fs.display, 40))
+	dc.SetFontFace(ff)
+	setHex(dc, pl.Type)
+	dc.DrawString(ellipsize(ff, keepGlyphs(fs.display, joinSpace(v.Project, v.Version)), textW-right), padL, cardH-padB-6)
+	return nil
+}
+
+// drawRelease is board G without a person: eyebrow, repo and version large,
+// the top changes, and the owner/repo over the date.
+func drawRelease(dc *gg.Context, fs fontSet, pl palette, v ReleaseCard) error {
+	ef := must(face(fs.label, 22))
+	setHex(dc, pl.accent)
+	dc.DrawCircle(padL+6, padT+14, 6)
+	dc.Fill()
+	dc.SetFontFace(ef)
+	eyebrow := "Release"
+	if !v.Date.IsZero() {
+		eyebrow = joinDot(eyebrow, v.Date.Format("02 Jan 2006"))
+	}
+	dc.DrawString(strings.ToUpper(eyebrow), padL+24, padT+22)
+
+	title := titleText(fs.display, joinSpace(v.Project, v.Version), "Release")
+	tf := fitFace(fs.display, title, textW, 68, 52)
+	dc.SetFontFace(tf)
+	setHex(dc, pl.Type)
+	tl := wrap(tf, title, textW, 2)
+	y := float64(padT + 22 + 18)
+	for _, l := range tl {
+		y += float64(tf.Metrics().Ascent.Round())
+		dc.DrawString(l, padL, y)
+		y += 4
+	}
+
+	const footY = cardH - padB - 52
+	if len(v.Release) > 0 {
+		drawPRList(dc, fs, pl, "", v.Release, v.ReleaseMore, y, footY)
+	} else if h := keepGlyphs(fs.body, v.Headline); h != "" {
+		bf := must(face(fs.body, 30))
+		dc.SetFontFace(bf)
+		setHex(dc, pl.body)
+		for _, l := range wrap(bf, h, textW, 2) {
+			y += 44
+			dc.DrawString(l, padL, y)
+		}
+	}
+	dc.SetLineWidth(3)
+	setHex(dc, pl.line)
+	dc.DrawLine(padL, footY, mainW-padR, footY)
+	dc.Stroke()
+	foot := ""
+	if owner, project := strings.TrimSpace(v.Brand.Owner), strings.TrimSpace(v.Project); owner != "" && project != "" {
+		foot = "github.com/" + owner + "/" + project
+	} else if v.CrewCount > 0 {
+		foot = plural(v.CrewCount, "person", "people") + " shipped this release"
+	}
+	if foot = keepGlyphs(fs.body, foot); foot != "" {
+		bf := must(face(fs.body, 24))
+		dc.SetFontFace(bf)
+		setHex(dc, pl.muted())
+		dc.DrawString(ellipsize(bf, foot, textW), padL, cardH-padB-6)
+	}
+	return nil
+}
+
+// drawPRList draws an optional caps label, up to five "#N title" rows and
+// "+ n more in the release notes", centred between top and bottom.
+func drawPRList(dc *gg.Context, fs fontSet, pl palette, label string, lines []PRLine, more int, top, bottom float64) {
+	if len(lines) > maxPRLines {
+		more += len(lines) - maxPRLines
+		lines = lines[:maxPRLines]
+	}
+	if len(lines) == 0 {
+		return
+	}
+	const rowH = 39.0
+	h := float64(len(lines)) * rowH
+	if label != "" {
+		h += 30
+	}
+	if more > 0 {
+		h += rowH
+	}
+	y := top + (bottom-top-h)/2
+	if label != "" {
+		lf := must(face(fs.label, 20))
+		dc.SetFontFace(lf)
+		setHex(dc, pl.dim)
+		dc.DrawString(strings.ToUpper(label), padL, y+20)
+		y += 30
+	}
+	nf := must(face(fs.mono, 24))
+	bf := must(face(fs.body, 24))
+	numW := 78.0
+	for _, l := range lines {
+		base := y + 28
+		if l.Number > 0 {
+			dc.SetFontFace(nf)
+			setHex(dc, pl.dim)
+			dc.DrawString("#"+strconv.Itoa(l.Number), padL, base)
+		}
+		dc.SetFontFace(bf)
+		setHex(dc, pl.body)
+		dc.DrawString(ellipsize(bf, keepGlyphs(fs.body, l.Title), textW-numW), padL+numW, base)
+		y += rowH
+	}
+	if more > 0 {
+		mf := must(face(fs.body, 22))
+		dc.SetFontFace(mf)
+		setHex(dc, pl.dim)
+		dc.DrawString("+ "+strconv.Itoa(more)+" more in the release notes", padL+numW, y+28)
+	}
+}
+
+// drawStub is the tear-off: the repo's logo, name and owner, the collaborator
+// count, and the Launch Crew mark.
+func drawStub(dc *gg.Context, fs fontSet, pl palette, b Brand, project, version string, crew int) error {
+	const tile = 104
+	x, y := float64(stubX), float64(padT)
+	drawLogoTile(dc, fs, pl, b, project, x, y, tile)
+
+	y += tile + 14
+	name := keepGlyphs(fs.display, project)
+	if name == "" {
+		name = "Launch"
+	}
+	nf := must(face(fs.display, 30))
+	dc.SetFontFace(nf)
+	setHex(dc, pl.Type)
+	for _, l := range wrap(nf, name, stubTextW, 2) {
+		y += 30
+		dc.DrawString(l, x, y)
+		y += 4
+	}
+	if owner := keepGlyphs(fs.body, b.Owner); owner != "" {
+		of := must(face(fs.body, 22))
+		dc.SetFontFace(of)
+		setHex(dc, pl.dim)
+		for _, l := range wrap(of, owner+" · on GitHub", stubTextW, 2) {
+			y += 30
+			dc.DrawString(l, x, y)
+		}
+	}
+
+	// Middle: collaborators, else the version.
+	lf := must(face(fs.label, 22))
+	label, value, tail := "Collaborators", strconv.Itoa(crew), " shipped it"
+	if crew <= 0 {
+		label, value, tail = "Version", keepGlyphs(fs.display, version), ""
+	}
+	if value != "" {
+		dc.SetFontFace(lf)
+		setHex(dc, pl.dim)
+		dc.DrawString(strings.ToUpper(label), x, 396)
+		vf := fitFace(fs.display, value, stubTextW, 44, 28)
+		dc.SetFontFace(vf)
+		setHex(dc, pl.Type)
+		dc.DrawString(value, x, 450)
+		if tail != "" {
+			tf := must(face(fs.label, 22))
+			if vx := x + textWidth(vf, value) + 10; vx+textWidth(tf, tail) <= x+stubTextW {
+				dc.SetFontFace(tf)
+				setHex(dc, pl.dim)
+				dc.DrawString(strings.TrimSpace(tail), vx, 450)
+			}
+		}
+	}
+
+	// Foot: the Launch Crew mark.
+	my := float64(cardH - padB - 30)
+	setHex(dc, pl.accent)
+	dc.DrawRoundedRectangle(x, my, 30, 30, 9)
+	dc.Fill()
+	drawPlane(dc, x+15, my+15, 18, 45, ink)
+	mf := must(face(fs.display, 20))
+	dc.SetFontFace(mf)
+	setHex(dc, pl.muted())
+	dc.DrawString("Launch Crew", x+40, my+22)
+	return nil
+}
+
+// drawLogoTile is the stub's square: the captain's logo or the owner's avatar
+// on white, else the project's initials on the accent.
+func drawLogoTile(dc *gg.Context, fs fontSet, pl palette, b Brand, project string, x, y, size float64) {
+	img := b.Logo
+	if img == nil && b.LogoURL != "" {
+		img, _ = fetchAvatar(b.LogoURL)
+	}
+	dc.DrawRoundedRectangle(x, y, size, size, 24)
+	if img == nil {
+		setHex(dc, pl.accent)
+		dc.Fill()
+		f := must(face(fs.display, 40))
+		dc.SetFontFace(f)
+		setHex(dc, ink)
+		dc.DrawStringAnchored(initials(keepGlyphs(fs.display, project)), x+size/2, y+size/2, 0.5, 0.35)
+		return
+	}
+	setHex(dc, white)
+	dc.Fill()
+	dc.DrawRoundedRectangle(x, y, size, size, 24)
+	dc.Clip()
+	dc.DrawImage(coverSquare(img, int(size)), int(x), int(y))
+	dc.ResetClip()
+}
+
+// initials is up to two letters: the first of the first two words, else the
+// first two of one word ("launch-crew" gives LC, "Ada" gives AD).
+func initials(s string) string {
+	words := strings.FieldsFunc(s, func(r rune) bool { return r == ' ' || r == '-' || r == '_' || r == '.' || r == '/' })
+	var out []rune
+	for _, w := range words {
+		if rs := []rune(w); len(rs) > 0 {
+			out = append(out, rs[0])
+		}
+		if len(out) == 2 {
+			break
+		}
+	}
+	if len(out) == 1 && len(words) == 1 {
+		if rs := []rune(words[0]); len(rs) > 1 {
+			out = append(out, rs[1])
+		}
+	}
+	return strings.ToUpper(string(out))
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strconv.Itoa(n) + " " + many
+}
+
+func joinSpace(parts ...string) string {
+	var out []string
+	for _, s := range parts {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return strings.Join(out, " ")
 }
 
 func joinDot(parts ...string) string {
@@ -244,53 +530,23 @@ func joinDot(parts ...string) string {
 	return strings.Join(out, " · ")
 }
 
-// stubText picks the stub: crew size when known, else the version.
-func stubText(crew int, version string, date time.Time) (label, value, d string) {
-	label, value = "Pass", strings.TrimSpace(version)
-	if crew > 0 {
-		label, value = "Crew", strconv.Itoa(crew)
+// minus is the true minus sign when the font has it, else a hyphen.
+func minus(f *sfnt.Font) string {
+	if keepGlyphs(f, "−") != "" {
+		return "−"
 	}
-	if !date.IsZero() {
-		d = date.Format("2 Jan")
-	}
-	return label, value, d
+	return "-"
 }
 
-func drawStub(dc *gg.Context, fs fontSet, p Preset, d pass) error {
-	x := float64(mainW + perfW)
-	w := float64(stubW) - 40 - 24
-	lf, err := face(fs.label, 24)
-	if err != nil {
-		return err
-	}
-	dc.SetFontFace(lf)
-	setHex(dc, blend(p.Type, p.Field, 0.55))
-	dc.DrawString(strings.ToUpper(keepGlyphs(fs.label, d.stubLabel)), x+4, pad+24)
-
-	if v := keepGlyphs(fs.display, d.stubValue); v != "" {
-		var vf font.Face
-		for px := 88.0; px >= 36; px -= 4 {
-			if vf, err = face(fs.display, px); err != nil {
-				return err
-			}
-			if textWidth(vf, v) <= w {
-				break
-			}
+// fitFace is the largest face from big down to small (in 4px steps) that fits
+// s on one line; small when none does.
+func fitFace(f *sfnt.Font, s string, maxW, big, small float64) font.Face {
+	for px := big; px > small; px -= 4 {
+		if ff := must(face(f, px)); textWidth(ff, s) <= maxW {
+			return ff
 		}
-		dc.SetFontFace(vf)
-		setHex(dc, p.Type)
-		dc.DrawString(v, x+4, 360)
 	}
-	if dt := keepGlyphs(fs.body, d.stubDate); dt != "" {
-		df, err := face(fs.body, 28)
-		if err != nil {
-			return err
-		}
-		dc.SetFontFace(df)
-		setHex(dc, blend(p.Type, p.Field, 0.55))
-		dc.DrawString(dt, x+4, cardH-pad)
-	}
-	return nil
+	return must(face(f, small))
 }
 
 // drawHero lays a cover-cropped hero image behind the card, then a heavy wash
@@ -331,26 +587,36 @@ func encode(img image.Image) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func drawAvatar(dc *gg.Context, url string, p Preset, cx, cy, r float64) {
+// drawAvatar draws the GitHub avatar in a circle, else the initials on a
+// quiet tint of the accent.
+func drawAvatar(dc *gg.Context, url string, pl palette, letters string, cx, cy, r float64) {
 	img, err := fetchAvatar(url)
 	if err != nil {
-		t := hexColor(p.Type)
-		dc.SetColor(color.NRGBA{t.R, t.G, t.B, 64})
+		setHex(dc, blend(pl.accent, pl.Field, 0.22))
 		dc.DrawCircle(cx, cy, r)
 		dc.Fill()
+		if fs, err := loadFonts(); err == nil && letters != "" {
+			dc.SetFontFace(must(face(fs.display, r*0.72)))
+			setHex(dc, pl.accent)
+			dc.DrawStringAnchored(letters, cx, cy, 0.5, 0.35)
+		}
 		return
 	}
-	// Cover-crop to a square, scale to 96, clip to a circle.
-	b := img.Bounds()
-	side := min(b.Dx(), b.Dy())
-	sq := image.Rect(b.Min.X+(b.Dx()-side)/2, b.Min.Y+(b.Dy()-side)/2, 0, 0)
-	sq.Max = image.Pt(sq.Min.X+side, sq.Min.Y+side)
-	dst := image.NewRGBA(image.Rect(0, 0, avatarSize, avatarSize))
-	xdraw.CatmullRom.Scale(dst, dst.Bounds(), img, sq, xdraw.Over, nil)
 	dc.DrawCircle(cx, cy, r)
 	dc.Clip()
-	dc.DrawImage(dst, int(cx-r), int(cy-r))
+	dc.DrawImage(coverSquare(img, int(2*r)), int(cx-r), int(cy-r))
 	dc.ResetClip()
+}
+
+// coverSquare centre-crops img to a square and scales it to side x side.
+func coverSquare(img image.Image, side int) image.Image {
+	b := img.Bounds()
+	s := min(b.Dx(), b.Dy())
+	sq := image.Rect(b.Min.X+(b.Dx()-s)/2, b.Min.Y+(b.Dy()-s)/2, 0, 0)
+	sq.Max = image.Pt(sq.Min.X+s, sq.Min.Y+s)
+	dst := image.NewRGBA(image.Rect(0, 0, side, side))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), img, sq, xdraw.Over, nil)
+	return dst
 }
 
 func fetchAvatar(url string) (image.Image, error) {
@@ -378,23 +644,6 @@ func fetchAvatar(url string) (image.Image, error) {
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	return img, err
-}
-
-// fitTitle picks the title size and lines: 80px on one line, else 64px on one
-// line, else 64px wrapped to at most two lines with an ellipsis.
-func fitTitle(f *sfnt.Font, s string, maxW float64) ([]string, float64) {
-	big, err1 := face(f, 80)
-	small, err2 := face(f, 64)
-	if err1 != nil || err2 != nil {
-		return []string{s}, 80
-	}
-	if textWidth(big, s) <= maxW {
-		return []string{s}, 80
-	}
-	if textWidth(small, s) <= maxW {
-		return []string{s}, 64
-	}
-	return wrap(small, s, maxW, 2), 64
 }
 
 // wrap breaks s into at most n lines, splitting over-long words by rune and

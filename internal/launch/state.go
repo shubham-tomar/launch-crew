@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/shubham-tomar/launchcrew/internal/buffer"
+	"github.com/shubham-tomar/launchcrew/internal/cards"
 	"github.com/shubham-tomar/launchcrew/internal/db/sqlc"
 	"github.com/shubham-tomar/launchcrew/internal/drafting"
 	"github.com/shubham-tomar/launchcrew/internal/preflight"
@@ -143,6 +144,61 @@ func (s *state) login(ctx context.Context, d Deps, ghID int64) string {
 		return gi.Login
 	}
 	return ""
+}
+
+// displayName is a contributor's GitHub profile name, cached on the crew row
+// the first time it is fetched; the login when they set none or GitHub is
+// unreachable.
+func (s *state) displayName(ctx context.Context, d Deps, m sqlc.CrewMember, login string) string {
+	if m.DisplayName != "" {
+		return m.DisplayName
+	}
+	if d.GitHub == nil || s.repo == nil || !m.GithubUserID.Valid {
+		return login
+	}
+	name, err := d.GitHub.UserName(ctx, s.repo.InstallationID, m.GithubUserID.Int64)
+	if err != nil {
+		log.Printf("launch %s: profile name of %d: %v", s.l.ID, m.GithubUserID.Int64, err)
+		return login
+	}
+	if name = strings.TrimSpace(name); name == "" {
+		return login
+	}
+	if err := d.Q.SetCrewDisplayName(ctx, sqlc.SetCrewDisplayNameParams{ID: m.ID, DisplayName: name}); err != nil {
+		log.Printf("launch %s: cache profile name: %v", s.l.ID, err)
+	}
+	return name
+}
+
+// releaseLines is the release's top changes for a card, captain-hidden ones
+// left out, and how many more there are.
+func (s *state) releaseLines() ([]cards.PRLine, int) {
+	return cardLines(s.changes)
+}
+
+// cardLines keeps the first five visible changes and counts the rest.
+func cardLines(changes []change) ([]cards.PRLine, int) {
+	var out []cards.PRLine
+	more := 0
+	for _, c := range changes {
+		if c.Hidden || strings.TrimSpace(c.Title) == "" {
+			continue
+		}
+		if len(out) == 5 {
+			more++
+			continue
+		}
+		out = append(out, cards.PRLine{Number: c.PRNumber, Title: c.Title})
+	}
+	return out, more
+}
+
+// brand is the repo's card branding; none for a manual launch.
+func (s *state) brand() cards.Brand {
+	if s.repo == nil {
+		return cards.Brand{}
+	}
+	return cards.RepoBrand(s.repo.FullName, s.repo.LogoPng, s.repo.Accent)
 }
 
 // isCaptain reports a crew row that is the captain themselves.

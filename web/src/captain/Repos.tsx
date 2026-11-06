@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listRepos, patchRepo, type ApiError, type Repo } from '../api'
+import CardBrand from './CardBrand'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
 import { SkeletonPanel } from '../components/Skeleton'
@@ -145,6 +146,7 @@ export default function Repos() {
                   onChange={(v) => toggle(r, { allowPrerelease: v })}
                 />
               </span>
+              <CardBrand repo={r} onSaved={(next) => setRepos((rs) => rs?.map((x) => (x.id === next.id ? next : x)))} />
               {rowError[r.id] && (
                 <span className="rp-row-error" role="alert">
                   {rowError[r.id]} Try again.

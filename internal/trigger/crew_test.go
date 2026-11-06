@@ -60,3 +60,12 @@ func TestSuggestCrewSkipsBotsAndKeepsSinglePR(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestSuggestCrewKeepsLineCounts(t *testing.T) {
+	p := pr(7, 1, "ada", time.Now())
+	p.Added, p.Deleted = 412, 96
+	got := suggestCrew([]drafting.PR{p}, nil)
+	if len(got) != 1 || got[0].PRs[0].Added != 412 || got[0].PRs[0].Deleted != 96 {
+		t.Fatalf("crew = %+v, want the PR's +412 -96 kept", got)
+	}
+}

@@ -285,7 +285,10 @@ export type Patch = {
   tickedCrew?: string[]
 }
 
-export type Repo = { id: string; fullName: string; enabled: boolean; allowPrerelease: boolean }
+/** logoUrl and accent brand the repo's cards; empty means the owner's GitHub avatar and the default accent. */
+export type Repo = { id: string; fullName: string; enabled: boolean; allowPrerelease: boolean; logoUrl: string; accent: string }
+
+export type RepoPatch = { enabled?: boolean; allowPrerelease?: boolean; logoUrl?: string; accent?: string }
 
 const json = (method: string, body?: unknown): RequestInit => ({
   method,
@@ -345,7 +348,7 @@ export const bufferChannelUrl = (channelId: string, status: string) => {
   const tab = status === 'posted' ? 'sent' : status === 'draft' ? 'drafts' : 'queue'
   return `https://publish.buffer.com/channels/${encodeURIComponent(channelId)}/${tab}`
 }
-export const patchRepo = (id: string, p: { enabled?: boolean; allowPrerelease?: boolean }) =>
+export const patchRepo = (id: string, p: RepoPatch) =>
   captain<Repo>(`/repos/${lid(id)}`, json('PATCH', p))
 
 export type Me = {

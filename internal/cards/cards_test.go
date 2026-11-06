@@ -214,17 +214,11 @@ func TestLongAndCJKNamesWrap(t *testing.T) {
 		t.Fatal(err)
 	}
 	long := strings.Repeat("abcdefghi ", 6)[:60]
-	for _, s := range []string{long, strings.Repeat("W", 60), strings.Repeat("wide words here ", 12)} {
-		lines, size := fitTitle(fs.display, s, 1056)
-		if len(lines) == 0 || len(lines) > 2 {
-			t.Errorf("%q: %d lines", s[:10], len(lines))
+	for _, s := range []string{long, strings.Repeat("W", 60)} {
+		f := fitFace(fs.display, s, 644, 56, 44)
+		if got := ellipsize(f, s, 644); textWidth(f, got) > 644 || got == "" {
+			t.Errorf("%q: does not fit: %q", s[:10], got)
 		}
-		if size != 64 && size != 80 {
-			t.Errorf("size %v", size)
-		}
-	}
-	if lines, size := fitTitle(fs.display, "Ada", 1056); len(lines) != 1 || size != 80 {
-		t.Errorf("short title = %v @%v, want 1 line at 80", lines, size)
 	}
 	if got := keepGlyphs(fs.display, "山田太郎"); got != "" {
 		t.Errorf("CJK kept: %q", got)
@@ -255,8 +249,8 @@ func solid(c color.Color) []byte {
 	return buf.Bytes()
 }
 
-// Centre of the avatar circle in the bottom row.
-const avatarCx, avatarCy = pad + avatarSize/2, 482 + avatarSize/2 - 8
+// A point inside the avatar circle, clear of the initials.
+const avatarCx, avatarCy = padL + avatarSize/2, padT + 66 - 40
 
 func TestMissingAvatarUsesPlaceholder(t *testing.T) {
 	red := color.RGBA{255, 0, 0, 255}
@@ -279,12 +273,8 @@ func TestMissingAvatarUsesPlaceholder(t *testing.T) {
 		}
 		return decodePNG(t, b).At(avatarCx, avatarCy)
 	}
-	field := hexColor(goldenPreset.Field)
-	typ := hexColor(goldenPreset.Type)
-	want := color.RGBA{ // type at 25% over field
-		uint8(float64(field.R)*0.75 + float64(typ.R)*0.25 + 0.5),
-		uint8(float64(field.G)*0.75 + float64(typ.G)*0.25 + 0.5),
-		uint8(float64(field.B)*0.75 + float64(typ.B)*0.25 + 0.5), 255}
+	pl := paletteOf(goldenPreset, "")
+	want := hexColor(blend(pl.accent, pl.Field, 0.22)) // the accent's quiet tint
 	near := func(a, b color.Color) bool {
 		ar, ag, ab, _ := a.RGBA()
 		br, bg, bb, _ := b.RGBA()
@@ -324,23 +314,73 @@ func TestHeroSitsBehindTheCardAndTextStaysReadable(t *testing.T) {
 	}
 }
 
-func TestPerforationNotchesAreCutAtTheEdges(t *testing.T) {
+func TestTicketIsTransparentOutsideItsShape(t *testing.T) {
 	b, err := Render(ContributorCard{Name: "Ada", Project: "p", Version: "v1"}, goldenPreset)
 	if err != nil {
 		t.Fatal(err)
 	}
 	img := decodePNG(t, b)
-	px := mainW + perfW/2
-	want := hexColor(ground)
-	for _, y := range []int{1, cardH - 2} {
-		r, g, bl, _ := img.At(px, y).RGBA()
-		if uint8(r>>8) != want.R || uint8(g>>8) != want.G || uint8(bl>>8) != want.B {
-			t.Errorf("notch at y=%d is %v, want ground %v", y, img.At(px, y), want)
+	alpha := func(x, y int) uint8 { return color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA).A }
+	for _, p := range [][2]int{{0, 0}, {cardW - 1, 0}, {0, cardH - 1}, {cardW - 1, cardH - 1}, {mainW, 1}, {mainW, cardH - 2}, {mainW + 10, 4}} {
+		if a := alpha(p[0], p[1]); a != 0 {
+			t.Errorf("(%d,%d) alpha %d, want transparent", p[0], p[1], a)
 		}
 	}
-	// Mid-height, away from the dashes' gaps, the field colour is back.
-	if r, _, _, _ := img.At(px+60, cardH/2).RGBA(); r>>8 > 0x60 {
-		t.Errorf("stub background not ink: %v", img.At(px+60, cardH/2))
+	for _, p := range [][2]int{{cardW / 2, cardH / 2}, {cornerR, cornerR}, {mainW + 60, cardH / 2}, {mainW - 40, 4}} {
+		if a := alpha(p[0], p[1]); a != 255 {
+			t.Errorf("(%d,%d) alpha %d, want opaque", p[0], p[1], a)
+		}
+	}
+}
+
+func TestAccentTooDarkFallsBack(t *testing.T) {
+	if got := paletteOf(goldenPreset, "#101010").accent; got != goldenPreset.Eyebrow {
+		t.Errorf("dark accent kept: %s", got)
+	}
+	if got := paletteOf(goldenPreset, "#58d3ae").accent; got != "#58D3AE" {
+		t.Errorf("readable accent = %s", got)
+	}
+	if got := paletteOf(goldenPreset, "red").accent; got != goldenPreset.Eyebrow {
+		t.Errorf("invalid accent kept: %s", got)
+	}
+	if Contrast(paletteOf(goldenPreset, "#58D3AE").accent, goldenPreset.Field) < 4.5 {
+		t.Error("accent under 4.5:1")
+	}
+}
+
+func TestGitHubMarkPathParses(t *testing.T) {
+	toks := pathTokens("A8.013 8.013 0 0016 8")
+	var vs []float64
+	for _, tk := range toks[1:] {
+		vs = append(vs, tk.v)
+	}
+	want := []float64{8.013, 8.013, 0, 0, 0, 16, 8}
+	if len(vs) != len(want) {
+		t.Fatalf("tokens %v", vs)
+	}
+	for i := range want {
+		if vs[i] != want[i] {
+			t.Fatalf("tokens %v, want %v", vs, want)
+		}
+	}
+	if got := initials("launch-crew"); got != "LC" {
+		t.Errorf("initials = %q", got)
+	}
+	if got := initials("Ada"); got != "AD" {
+		t.Errorf("initials = %q", got)
+	}
+}
+
+func TestBrandLogoFillsTheStubTile(t *testing.T) {
+	red := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	draw.Draw(red, red.Bounds(), image.NewUniform(color.RGBA{255, 0, 0, 255}), image.Point{}, draw.Src)
+	b, err := Render(ContributorCard{Name: "Ada", Project: "p", Version: "v1", Brand: Brand{Logo: red}}, goldenPreset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := color.NRGBAModel.Convert(decodePNG(t, b).At(stubX+52, padT+52)).(color.NRGBA)
+	if c.R < 240 || c.G > 20 {
+		t.Errorf("tile centre %v, want the logo", c)
 	}
 }
 

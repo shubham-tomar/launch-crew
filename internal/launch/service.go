@@ -279,7 +279,7 @@ func CreateManual(ctx context.Context, d Deps, ownerID uuid.UUID, in trigger.Man
 	if headline == "" {
 		headline = spec.Title
 	}
-	card, err := d.render()(cards.ReleaseCard{Project: spec.Title, Headline: headline}, preset)
+	card, err := d.render()(cards.ReleaseCard{Project: spec.Title, Headline: headline, Date: d.now()}, preset)
 	if err != nil {
 		return Summary{}, "", fmt.Errorf("launch: render release card: %w", err)
 	}

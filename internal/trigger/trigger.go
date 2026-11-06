@@ -40,6 +40,10 @@ type CrewSuggestion struct {
 type PRRef struct {
 	Number int    `json:"number"`
 	Title  string `json:"title"`
+	// Lines added and removed, for the card's diff. Zero on rows saved before
+	// they were kept.
+	Added   int `json:"added,omitempty"`
+	Deleted int `json:"deleted,omitempty"`
 }
 
 // LaunchSpec is what a trigger produces: everything needed to save a draft launch.

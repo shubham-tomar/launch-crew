@@ -227,7 +227,7 @@ func (q *Queries) GetLaunchByRepoAndTag(ctx context.Context, arg GetLaunchByRepo
 }
 
 const getRepo = `-- name: GetRepo :one
-SELECT id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id FROM repos WHERE id = $1
+SELECT id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent FROM repos WHERE id = $1
 `
 
 func (q *Queries) GetRepo(ctx context.Context, id uuid.UUID) (Repo, error) {
@@ -241,6 +241,9 @@ func (q *Queries) GetRepo(ctx context.Context, id uuid.UUID) (Repo, error) {
 		&i.Enabled,
 		&i.AllowPrerelease,
 		&i.GithubRepoID,
+		&i.LogoUrl,
+		&i.LogoPng,
+		&i.Accent,
 	)
 	return i, err
 }

@@ -64,3 +64,6 @@ DELETE FROM users WHERE id = $1;
 
 -- name: SetUserRememberMe :exec
 UPDATE users SET remember_me = $2 WHERE id = $1;
+
+-- name: UpdateRepoBranding :one
+UPDATE repos SET logo_url = $2, logo_png = $3, accent = $4 WHERE id = $1 RETURNING *;

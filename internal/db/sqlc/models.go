@@ -106,6 +106,7 @@ type CrewMember struct {
 	CommentFailed   bool               `json:"comment_failed"`
 	Prs             []byte             `json:"prs"`
 	CommentRetries  int32              `json:"comment_retries"`
+	DisplayName     string             `json:"display_name"`
 }
 
 type GithubIdentity struct {
@@ -195,6 +196,9 @@ type Repo struct {
 	Enabled         bool          `json:"enabled"`
 	AllowPrerelease bool          `json:"allow_prerelease"`
 	GithubRepoID    pgtype.Int8   `json:"github_repo_id"`
+	LogoUrl         string        `json:"logo_url"`
+	LogoPng         []byte        `json:"logo_png"`
+	Accent          string        `json:"accent"`
 }
 
 type User struct {

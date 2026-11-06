@@ -370,13 +370,26 @@ func contributorCard(ctx context.Context, d Deps, s *state, m sqlc.CrewMember) (
 	preset := cards.PresetFor(s.l.ID)
 	prs := trigger.MemberPRs(ctx, d.Pool, m.ID, m.PrNumber.Int32, m.PrTitle.String)
 	var first trigger.PRRef
-	if len(prs) > 0 {
-		first = prs[0]
+	added, deleted := 0, 0
+	for i, p := range prs {
+		if i == 0 {
+			first = p
+		}
+		added, deleted = added+p.Added, deleted+p.Deleted
 	}
+	login := s.login(ctx, d, m.GithubUserID.Int64)
+	lines, more := s.releaseLines()
 	png, err := d.render()(cards.ContributorCard{
-		Name:      s.login(ctx, d, m.GithubUserID.Int64),
+		Name:      s.displayName(ctx, d, m, login),
+		Handle:    login,
+		Role:      titleCase(m.Role),
 		AvatarURL: fmt.Sprintf("https://avatars.githubusercontent.com/u/%d?s=256", m.GithubUserID.Int64),
-		Project:   s.project, Version: s.version(), PRTitle: first.Title, PRCount: len(prs),
+		Project:   s.project, Version: s.version(), PRTitle: first.Title, PRNumber: first.Number, PRCount: len(prs),
+		Added: added, Deleted: deleted,
+		Release: lines, ReleaseMore: more,
+		CrewCount: s.crewSize(),
+		Date:      d.now(),
+		Brand:     s.brand(),
 	}, preset)
 	if err != nil {
 		return m, fmt.Errorf("render card for %s: %w", m.ID, err)

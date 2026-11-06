@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -214,7 +216,23 @@ func (d ReleaseDeps) save(ctx context.Context, render func(any, cards.Preset) ([
 	if len(spec.Headlines) > 0 {
 		headline = spec.Headlines[0].Title
 	}
-	png, err := render(cards.ReleaseCard{Project: spec.Project(), Version: spec.ReleaseTag, Headline: headline}, preset)
+	var lines []cards.PRLine
+	more := 0
+	for _, h := range spec.Headlines {
+		if h.Hidden || strings.TrimSpace(h.Title) == "" {
+			continue
+		}
+		if len(lines) == 5 {
+			more++
+			continue
+		}
+		lines = append(lines, cards.PRLine{Number: h.PRNumber, Title: h.Title})
+	}
+	png, err := render(cards.ReleaseCard{
+		Project: spec.Project(), Version: spec.ReleaseTag, Headline: headline,
+		Release: lines, ReleaseMore: more, CrewCount: len(spec.Crew), Date: time.Now(),
+		Brand: cards.RepoBrand(repo.FullName, repo.LogoPng, repo.Accent),
+	}, preset)
 	if err != nil {
 		return fmt.Errorf("render release card: %w", err)
 	}

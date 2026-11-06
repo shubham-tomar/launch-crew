@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router'
 import type { Repo } from '../api'
 import Repos from './Repos'
 
-const repo = (over: Partial<Repo> = {}): Repo => ({ id: 'r1', fullName: 'acme/rocket', enabled: true, allowPrerelease: false, ...over })
+const repo = (over: Partial<Repo> = {}): Repo => ({ id: 'r1', fullName: 'acme/rocket', enabled: true, allowPrerelease: false, logoUrl: '', accent: '', ...over })
 
 function setup(list: Repo[]) {
   const calls: { method: string; url: string; body?: unknown }[] = []
@@ -97,4 +97,27 @@ test('a switch flips at once, is held while saving, and reverts with an inline e
   const row = pre.closest('li')!
   expect(within(row).getByRole('alert')).toHaveTextContent('GitHub is not answering')
   expect(screen.getByText('Watching releases')).toBeInTheDocument()
+})
+
+describe('card branding', () => {
+  it('saves a logo and accent for the repo', async () => {
+    const calls = setup([repo()])
+    await userEvent.click(await screen.findByText('Card branding'))
+    const form = screen.getByRole('form', { name: 'Card branding for acme/rocket' })
+    expect(within(form).getByText(/acme's GitHub avatar/)).toBeInTheDocument()
+    await userEvent.type(within(form).getByLabelText('Logo URL'), 'https://acme.dev/logo.png')
+    await userEvent.click(within(form).getByRole('button', { name: 'Use #58D3AE' }))
+    await userEvent.click(within(form).getByRole('button', { name: 'Save branding' }))
+    expect(await within(form).findByText(/New cards use it/)).toBeInTheDocument()
+    expect(calls.at(-1)).toMatchObject({ method: 'PATCH', url: '/api/captain/repos/r1', body: { logoUrl: 'https://acme.dev/logo.png', accent: '#58D3AE' } })
+  })
+
+  it('refuses a malformed hex before sending', async () => {
+    const calls = setup([repo()])
+    await userEvent.click(await screen.findByText('Card branding'))
+    await userEvent.type(screen.getByLabelText('Accent hex colour'), 'blue')
+    expect(screen.getByText('Use a hex colour like #58D3AE.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save branding' })).toBeDisabled()
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
+  })
 })

@@ -174,3 +174,6 @@ FROM crew_drafts d
 JOIN crew_members m ON m.id = d.crew_member_id
 WHERE m.launch_id = $1 AND d.status = 'queued' AND d.due_at IS NOT NULL
 GROUP BY d.crew_member_id;
+
+-- name: SetCrewDisplayName :exec
+UPDATE crew_members SET display_name = $2 WHERE id = $1;

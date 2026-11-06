@@ -57,6 +57,8 @@ type env struct {
 
 	mu      sync.Mutex
 	presets []cards.Preset
+	// rendered is every card drawn, in order.
+	rendered []any
 }
 
 func ghID() int64 { return 4_000_000_000 + int64(uuid.New().ID()) }
@@ -153,9 +155,10 @@ func setup(t *testing.T) *env {
 	e.deps = launch.Deps{
 		Q: q, Pool: pool, Buffer: bc, GitHub: ghc,
 		Cards: cards.NewUploader(e.r2.URL, "cards", "ak", "sk", "https://cdn.example"),
-		Render: func(_ any, p cards.Preset) ([]byte, error) {
+		Render: func(c any, p cards.Preset) ([]byte, error) {
 			e.mu.Lock()
 			e.presets = append(e.presets, p)
+			e.rendered = append(e.rendered, c)
 			e.mu.Unlock()
 			return tiny, nil
 		},
