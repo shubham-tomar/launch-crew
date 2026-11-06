@@ -342,7 +342,7 @@
   border-style: solid;
   border-color: var(--color-hairline);
   border-radius: var(--rounded-sm);
-  background-color: var(--color-surface);
+  background-color: var(--color-tint);
   color: var(--color-text);
   font-family: var(--font-display);
   font-size: var(--type-small-size);

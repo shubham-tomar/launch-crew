@@ -23,7 +23,7 @@
 }
 
 .btn-secondary {
-  background-color: var(--color-surface);
+  background-color: var(--color-tint);
   color: var(--color-text);
   border-color: var(--color-hairline);
 }
