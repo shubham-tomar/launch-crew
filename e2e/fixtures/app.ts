@@ -100,15 +100,13 @@ export async function launchGitHub(page: Page, rq: APIRequestContext): Promise<s
   return id
 }
 
-/** Waits for the PR comment and returns the invite path (/s/<token>) in it. */
+const inviteRe = /https?:\/\/[^/\s)]+(\/s\/[A-Za-z0-9_-]+)/
+
+/** Waits for the invite comment on the PR and returns its path (/s/<token>). The
+ * captain's "draft is ready" mention may share the PR; it carries no invite. */
 export async function invitePath(rq: APIRequestContext, pr: number): Promise<string> {
-  const cs = await until(async () => {
-    const c = await control.comments(rq, pr)
-    return c.length ? c : null
-  }, `comment on #${pr}`)
-  const m = cs[0].body.match(/https?:\/\/[^/\s)]+(\/s\/[A-Za-z0-9_-]+)/)
-  if (!m) throw new Error(`no invite link in: ${cs[0].body}`)
-  return m[1]
+  const c = await until(async () => (await control.comments(rq, pr)).find((x) => inviteRe.test(x.body)) ?? null, `invite comment on #${pr}`)
+  return c.body.match(inviteRe)![1]
 }
 
 /** Verifies GitHub as person and connects Buffer as their own account; lands on approve. */

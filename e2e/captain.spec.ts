@@ -42,7 +42,11 @@ test('captain launches once', async ({ page, request }) => {
   await until(async () => (await captainPosts()).length === 2, 'two captain posts')
   await until(async () => (await control.comments(request, people.bob.pr)).length === 1, 'comment on #12')
   await until(async () => (await control.comments(request, people.alice.pr)).length === 1, 'comment on #11')
-  expect(await control.comments(request, 13)).toHaveLength(0) // carol was suggested, not ticked
+  // carol was suggested, not ticked: no invite. Her PR is the release's latest, so it
+  // carries the one "draft is ready" mention for the captain, posted before launch.
+  const on13 = await control.comments(request, 13)
+  expect(on13.filter((c) => !c.body.includes('launchcrew:draft-ready'))).toHaveLength(0)
+  expect(on13.filter((c) => c.body.startsWith('@captain your Launch Crew draft'))).toHaveLength(1)
 
   // Second press: refused, and nothing new reaches Buffer or GitHub.
   const again = await page.request.post(`/api/captain/launches/${id}/launch`)
