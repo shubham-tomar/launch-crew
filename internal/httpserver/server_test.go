@@ -158,3 +158,29 @@ func TestHealthzReportsReadiness(t *testing.T) {
 		t.Fatalf("hung probe took %v", d)
 	}
 }
+
+func TestOtherHostsRedirectToBaseURL(t *testing.T) {
+	h := httpserver.New(httpserver.Deps{BaseURL: "https://launchcrewbot.app", GitHubWebhook: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusAccepted) })})
+	do := func(method, host, target string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, target, nil)
+		req.Host = host
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		return rr
+	}
+	if rr := do("GET", "launchcrew.fly.dev", "/s/tok?x=1"); rr.Code != http.StatusMovedPermanently || rr.Header().Get("Location") != "https://launchcrewbot.app/s/tok?x=1" {
+		t.Fatalf("GET: %d %s", rr.Code, rr.Header().Get("Location"))
+	}
+	if rr := do("POST", "launchcrew.fly.dev", "/api/me/opt-out"); rr.Code != http.StatusPermanentRedirect {
+		t.Fatalf("POST: %d", rr.Code)
+	}
+	if rr := do("GET", "LaunchCrewBot.app", "/healthz"); rr.Code != http.StatusOK {
+		t.Fatalf("canonical host: %d", rr.Code)
+	}
+	if rr := do("GET", "10.0.0.1:8080", "/healthz"); rr.Code != http.StatusOK {
+		t.Fatalf("health on machine address: %d", rr.Code)
+	}
+	if rr := do("POST", "launchcrew.fly.dev", "/webhooks/github"); rr.Code != http.StatusAccepted {
+		t.Fatalf("webhook on old host: %d", rr.Code)
+	}
+}

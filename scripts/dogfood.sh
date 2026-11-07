@@ -50,4 +50,4 @@ else
 fi
 
 echo "release: https://github.com/$slug/releases/tag/$tag"
-echo "captain: https://launchcrew.fly.dev/captain"
+echo "captain: https://launchcrewbot.app/captain"

@@ -126,6 +126,9 @@ func main() {
 			},
 		},
 	}
+	if e2e == nil {
+		deps.BaseURL = cfg.BaseURL // e2e servers answer on whatever host the test dials
+	}
 	e2e.wire(&deps, pool)
 	h := httpserver.New(deps)
 	worker := &jobs.Worker{

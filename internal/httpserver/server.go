@@ -6,6 +6,8 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -34,6 +36,10 @@ type Deps struct {
 	// Ready, when set, is probed by /healthz (the database ping); an error
 	// answers 503 so Fly stops routing to a machine that cannot reach it.
 	Ready func(context.Context) error
+	// BaseURL, when set, is the one public origin: a request on any other
+	// host is redirected there, so a sign-in started on an old address does
+	// not come back to another one without its cookie.
+	BaseURL string
 }
 
 // readyTimeout bounds the /healthz probe; Fly's check times out at 3 s.
@@ -43,6 +49,9 @@ const readyTimeout = time.Second
 func New(deps Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(harden)
+	if c, err := url.Parse(deps.BaseURL); err == nil && c.Host != "" {
+		r.Use(canonical(c))
+	}
 	r.Get("/healthz", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if deps.Ready != nil {
@@ -144,4 +153,24 @@ func spaHandler() http.Handler {
 		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 		_, _ = w.Write(index)
 	})
+}
+
+// canonical redirects requests on another host to base, keeping the path and
+// query. /healthz answers on any host (Fly probes the machine directly) and
+// webhooks too (GitHub does not follow redirects on a POST). GET and HEAD get
+// a 301; anything else a 308, which keeps the method and body.
+func canonical(base *url.URL) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.EqualFold(r.Host, base.Host) || r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/webhooks/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			code := http.StatusPermanentRedirect
+			if r.Method == http.MethodGet || r.Method == http.MethodHead {
+				code = http.StatusMovedPermanently
+			}
+			http.Redirect(w, r, base.Scheme+"://"+base.Host+r.URL.RequestURI(), code)
+		})
+	}
 }
