@@ -648,6 +648,11 @@ func TestShowPNGRendersOnceAndCaches(t *testing.T) {
 
 func TestShowPNGSharesOpenBudget(t *testing.T) {
 	e := setup(t)
+	// The budget is per clock minute: pin the clock so the run cannot straddle two.
+	deps := e.deps
+	at := time.Now().UTC().Truncate(time.Minute).Add(30 * time.Second)
+	deps.Now = func() time.Time { return at }
+	e.h = httpserver.New(httpserver.Deps{Crew: api.NewCrew(deps, e.st)})
 	hdr := map[string]string{"Fly-Client-IP": "203.0.113.77"}
 	for i := range 5 {
 		if rr := e.do("GET", "/api/l/"+e.open+"/show.png", "", hdr, nil); rr.Code != 200 {
