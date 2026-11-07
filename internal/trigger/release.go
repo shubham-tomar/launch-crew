@@ -36,9 +36,10 @@ type ReleaseEvent struct {
 		Draft      bool   `json:"draft"`
 		Prerelease bool   `json:"prerelease"`
 		Author     struct {
-			ID    int64  `json:"id"`
-			Login string `json:"login"`
-			Type  string `json:"type"`
+			ID        int64  `json:"id"`
+			Login     string `json:"login"`
+			Type      string `json:"type"`
+			AvatarURL string `json:"avatar_url"`
 		} `json:"author"`
 	} `json:"release"`
 }
@@ -71,11 +72,11 @@ func (g GitHubRelease) Build(ctx context.Context, in Input) (LaunchSpec, error) 
 	}
 	owner, repo, _ := strings.Cut(ev.Repository.FullName, "/")
 	rel := ev.Release
-	prev, err := g.GH.PreviousTag(ctx, ev.Installation.ID, owner, repo, rel.TagName)
+	hist, err := g.GH.History(ctx, ev.Installation.ID, owner, repo, rel.TagName)
 	if err != nil {
 		return LaunchSpec{}, err
 	}
-	prs, err := g.GH.PRsBetween(ctx, ev.Installation.ID, owner, repo, prev, rel.TagName)
+	prs, commits, err := g.GH.ReleaseChanges(ctx, ev.Installation.ID, owner, repo, hist.PrevTag, rel.TagName)
 	if err != nil {
 		return LaunchSpec{}, err
 	}
@@ -87,7 +88,16 @@ func (g GitHubRelease) Build(ctx context.Context, in Input) (LaunchSpec, error) 
 	if title == "" {
 		title = rel.TagName
 	}
+	var solo *Solo
+	if isSolo(rel.Author.Login, rel.Author.Type, prs, commits) {
+		solo = soloOf(prs, commits, hist)
+		solo.Login, solo.AvatarURL = rel.Author.Login, rel.Author.AvatarURL
+		if name, err := g.GH.UserName(ctx, ev.Installation.ID, rel.Author.ID); err == nil {
+			solo.Name = strings.TrimSpace(name)
+		}
+	}
 	return LaunchSpec{
+		Solo:         solo,
 		Title:        title,
 		Summary:      firstRunes(strings.TrimSpace(rel.Body), summaryRunes),
 		Source:       "github",
@@ -160,6 +170,55 @@ func change(p drafting.PR) drafting.Change {
 // IsBot reports whether a GitHub account is a bot.
 func IsBot(login, accountType string) bool {
 	return accountType == "Bot" || strings.HasSuffix(login, "[bot]")
+}
+
+// isSolo reports whether the release author is the only person in the
+// release: every human PR author and commit author is them. Commits whose
+// author has no GitHub account count as theirs.
+func isSolo(author, authorType string, prs []drafting.PR, commits []github.ReleaseCommit) bool {
+	if author == "" || IsBot(author, authorType) || (len(prs) == 0 && len(commits) == 0) {
+		return false
+	}
+	other := func(login, kind string) bool {
+		return login != "" && !IsBot(login, kind) && !strings.EqualFold(login, author)
+	}
+	for _, p := range prs {
+		if other(p.AuthorLogin, p.AuthorType) {
+			return false
+		}
+	}
+	for _, c := range commits {
+		if other(c.AuthorLogin, c.AuthorType) {
+			return false
+		}
+	}
+	return true
+}
+
+// maxSubjects is how many commit subjects a solo spec keeps for its card.
+const maxSubjects = 20
+
+// soloOf counts the release's commits and lines. Lines come from the PRs;
+// a release without PRs keeps its commit subjects instead, merges skipped.
+func soloOf(prs []drafting.PR, commits []github.ReleaseCommit, h github.ReleaseHistory) *Solo {
+	s := &Solo{Commits: len(commits), PrevTag: h.PrevTag, PrevAt: h.PrevAt, Ordinal: h.Ordinal}
+	for _, p := range prs {
+		s.Added += p.Added
+		s.Deleted += p.Deleted
+	}
+	if len(prs) == 0 {
+		for i := len(commits) - 1; i >= 0; i-- {
+			sub := commits[i].Subject
+			if sub == "" || strings.HasPrefix(sub, "Merge ") {
+				continue
+			}
+			s.SubjectCount++
+			if len(s.Subjects) < maxSubjects {
+				s.Subjects = append(s.Subjects, sub)
+			}
+		}
+	}
+	return s
 }
 
 // suggestCrew lists each human PR author once, with all of their PRs newest

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -228,11 +229,16 @@ func (d ReleaseDeps) save(ctx context.Context, render func(any, cards.Preset) ([
 		}
 		lines = append(lines, cards.PRLine{Number: h.PRNumber, Title: h.Title})
 	}
-	png, err := render(cards.ReleaseCard{
+	brand := cards.RepoBrand(repo.FullName, repo.LogoPng, repo.Accent)
+	var card any = cards.ReleaseCard{
 		Project: spec.Project(), Version: spec.ReleaseTag, Headline: headline,
 		Release: lines, ReleaseMore: more, CrewCount: len(spec.Crew), Date: time.Now(),
-		Brand: cards.RepoBrand(repo.FullName, repo.LogoPng, repo.Accent),
-	}, preset)
+		Brand: brand,
+	}
+	if spec.Solo != nil {
+		card = soloCard(spec, lines, more, brand, time.Now())
+	}
+	png, err := render(card, preset)
 	if err != nil {
 		return fmt.Errorf("render release card: %w", err)
 	}
@@ -291,4 +297,51 @@ func presetIndex(p cards.Preset) int16 {
 		}
 	}
 	return 0
+}
+
+// soloCard is the release card for one person's release: their PRs as the
+// lines, else their commit subjects.
+func soloCard(spec LaunchSpec, lines []cards.PRLine, more int, brand cards.Brand, now time.Time) cards.SoloCard {
+	so := spec.Solo
+	if len(lines) == 0 {
+		for _, sub := range so.Subjects {
+			if len(lines) == 5 {
+				break
+			}
+			lines = append(lines, cards.PRLine{Title: sub})
+		}
+		more = max(so.SubjectCount-len(lines), 0)
+	}
+	days := -1
+	if !so.PrevAt.IsZero() {
+		days = int(now.Sub(so.PrevAt).Hours() / 24)
+	}
+	return cards.SoloCard{
+		Name: so.Name, Handle: so.Login, AvatarURL: so.AvatarURL,
+		Project: spec.Project(), Version: spec.ReleaseTag,
+		Commits: so.Commits, Added: so.Added, Deleted: so.Deleted,
+		Release: lines, ReleaseMore: more, Date: now,
+		PrevTag: so.PrevTag, DaysSince: days, Ordinal: so.Ordinal,
+		FirstRelease: so.PrevTag == "", Major: isMajor(spec.ReleaseTag),
+		Brand: brand,
+	}
+}
+
+// isMajor reports a vN.0.0 tag with N of at least 1 ("v2.0.0", "2.0", "v1").
+func isMajor(tag string) bool {
+	t := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(tag), "v"), "V")
+	parts := strings.Split(t, ".")
+	if len(parts) == 0 || len(parts) > 3 {
+		return false
+	}
+	n, err := strconv.Atoi(parts[0])
+	if err != nil || n < 1 {
+		return false
+	}
+	for _, p := range parts[1:] {
+		if p != "0" {
+			return false
+		}
+	}
+	return true
 }

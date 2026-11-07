@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/makiuchi-d/gozxing"
@@ -550,4 +551,46 @@ func abs(n int) int {
 		return -n
 	}
 	return n
+}
+
+func TestSoloCard(t *testing.T) {
+	date := time.Date(2026, 11, 7, 0, 0, 0, 0, time.UTC)
+	cases := map[string]SoloCard{
+		// PRs, a previous release 42 days back, the 12th release.
+		"solo.png": {
+			Name: "Shubham Tomar", Handle: "shubham-tomar", Project: "launch-crew", Version: "v2.4.0",
+			Commits: 41, Added: 1204, Deleted: 380, Date: date, PrevTag: "v2.3.0", DaysSince: 42, Ordinal: 12,
+			Release: []PRLine{{42, "Split-pane resize with keyboard"}, {41, "Credit every PR a person has"}, {39, "Remember workspace layout"}},
+		},
+		// No PRs: commit subjects, no number column; the first release.
+		"solo-commits.png": {
+			Name: "Shubham Tomar", Handle: "shubham-tomar", Project: "launch-crew", Version: "v0.1.0",
+			Commits: 9, Date: date, DaysSince: -1, Ordinal: 1, FirstRelease: true,
+			Release: []PRLine{{0, "Draft posts in each person's voice"}, {0, "Release cards"}, {0, "Buffer sign-in"}}, ReleaseMore: 6,
+		},
+	}
+	for name, c := range cases {
+		b, err := Render(c, goldenPreset)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		compareGolden(t, name, b)
+	}
+	if got := soloMid(SoloCard{Ordinal: 20}); got.value != "20th" || got.label != "Milestone" {
+		t.Errorf("20th release: %+v", got)
+	}
+	if got := soloMid(SoloCard{Ordinal: 7}); got.value != "7" || got.label != "Releases" {
+		t.Errorf("7th release: %+v", got)
+	}
+	if got := soloMid(SoloCard{Major: true, Ordinal: 7}); got.value != "Major" {
+		t.Errorf("major: %+v", got)
+	}
+	for n, want := range map[int]string{1: "1st", 2: "2nd", 3: "3rd", 11: "11th", 12: "12th", 13: "13th", 21: "21st", 112: "112th"} {
+		if ordinal(n) != want {
+			t.Errorf("ordinal(%d) = %s", n, ordinal(n))
+		}
+	}
+	if soloFoot(SoloCard{PrevTag: "v1", DaysSince: 1}) != "1 day since v1" {
+		t.Error("one day")
+	}
 }

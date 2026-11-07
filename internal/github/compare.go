@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	gh "github.com/google/go-github/v93/github"
 
@@ -31,22 +32,33 @@ var prSuffix = regexp.MustCompile(`\(#(\d+)\)\s*$`)
 // first release: the compare runs from the repository's root commit, so the
 // whole history up to head counts (newest maxCommits).
 func (c *Client) PRsBetween(ctx context.Context, installID int64, owner, repo, base, head string) ([]drafting.PR, error) {
+	prs, _, err := c.ReleaseChanges(ctx, installID, owner, repo, base, head)
+	return prs, err
+}
+
+// ReleaseCommit is one commit in a release: its subject line and author.
+type ReleaseCommit struct {
+	SHA, Subject, AuthorLogin, AuthorType string
+}
+
+// ReleaseChanges is PRsBetween plus the commits it walked, newest last.
+func (c *Client) ReleaseChanges(ctx context.Context, installID int64, owner, repo, base, head string) ([]drafting.PR, []ReleaseCommit, error) {
 	cl, err := c.installation(installID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var shas []commitRef
 	if base == "" {
 		root, err := rootCommit(ctx, cl, owner, repo, head)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		shas = append(shas, root)
 		base = root.sha
 	}
 	between, err := compare(ctx, cl, owner, repo, base, head)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	shas = append(shas, between...)
 	if len(shas) > maxCommits {
@@ -68,7 +80,7 @@ func (c *Client) PRsBetween(ctx context.Context, installID int64, owner, repo, b
 		}
 		prs, _, err := cl.PullRequests.ListPullRequestsWithCommit(ctx, owner, repo, cm.sha, nil)
 		if err != nil {
-			return nil, fmt.Errorf("pulls for %s: %w", cm.sha, err)
+			return nil, nil, fmt.Errorf("pulls for %s: %w", cm.sha, err)
 		}
 		for _, p := range prs {
 			if p.MergedAt != nil && p.Number != nil {
@@ -84,14 +96,19 @@ func (c *Client) PRsBetween(ctx context.Context, installID int64, owner, repo, b
 			continue // "(#N)" pointed at an issue or another repo's PR
 		}
 		if err != nil {
-			return nil, fmt.Errorf("get PR #%d: %w", n, err)
+			return nil, nil, fmt.Errorf("get PR #%d: %w", n, err)
 		}
 		if p.MergedAt == nil {
 			continue
 		}
 		out = append(out, toPR(p))
 	}
-	return out, nil
+	commits := make([]ReleaseCommit, 0, len(shas))
+	for _, cm := range shas {
+		subject, _, _ := strings.Cut(cm.message, "\n")
+		commits = append(commits, ReleaseCommit{SHA: cm.sha, Subject: strings.TrimSpace(subject), AuthorLogin: cm.author, AuthorType: cm.authorType})
+	}
+	return out, commits, nil
 }
 
 // subjectPR reads the "(#N)" GitHub appends to a squash or merge commit subject.
@@ -128,12 +145,15 @@ func toPR(p *gh.PullRequest) drafting.PR {
 	return pr
 }
 
-type commitRef struct{ sha, message string }
+type commitRef struct{ sha, message, author, authorType string }
 
 func refOf(rc *gh.RepositoryCommit) commitRef {
 	r := commitRef{sha: rc.GetSHA()}
 	if rc.Commit != nil {
 		r.message = rc.Commit.GetMessage()
+	}
+	if rc.Author != nil {
+		r.author, r.authorType = rc.Author.GetLogin(), rc.Author.GetType()
 	}
 	return r
 }
@@ -185,16 +205,35 @@ func rootCommit(ctx context.Context, cl *gh.Client, owner, repo, head string) (c
 // prereleases when head is a full release. When head has no older release the
 // tag list (newest first) decides.
 func (c *Client) PreviousTag(ctx context.Context, installID int64, owner, repo, head string) (string, error) {
+	h, err := c.History(ctx, installID, owner, repo, head)
+	return h.PrevTag, err
+}
+
+// ReleaseHistory is where a release sits among the repo's releases.
+type ReleaseHistory struct {
+	// PrevTag is the tag released before head, "" for the first.
+	PrevTag string
+	// PrevAt is when the previous release was published; zero when it came
+	// from the tag list or is unknown.
+	PrevAt time.Time
+	// Ordinal counts head among the repo's published releases, oldest first
+	// (prereleases count only when head is one); 0 when head is not a release.
+	Ordinal int
+}
+
+// History is PreviousTag with the previous release's date and head's ordinal.
+func (c *Client) History(ctx context.Context, installID int64, owner, repo, head string) (ReleaseHistory, error) {
+	var h ReleaseHistory
 	cl, err := c.installation(installID)
 	if err != nil {
-		return "", err
+		return h, err
 	}
 	var rels []*gh.RepositoryRelease
 	opts := &gh.ListOptions{PerPage: 100}
 	for range maxPages {
 		page, resp, err := cl.Repositories.ListReleases(ctx, owner, repo, opts)
 		if err != nil {
-			return "", fmt.Errorf("list releases: %w", err)
+			return h, fmt.Errorf("list releases: %w", err)
 		}
 		rels = append(rels, page...)
 		if resp.NextPage == 0 {
@@ -203,14 +242,24 @@ func (c *Client) PreviousTag(ctx context.Context, installID int64, owner, repo, 
 		opts.Page = resp.NextPage
 	}
 	for i, r := range rels {
-		if r.TagName != head {
+		if r.GetTagName() != head {
 			continue
 		}
+		h.Ordinal = 1
 		for _, older := range rels[i+1:] {
-			if older.Draft || (older.Prerelease && !r.Prerelease) {
+			if older.GetDraft() || (older.GetPrerelease() && !r.GetPrerelease()) {
 				continue
 			}
-			return older.TagName, nil
+			h.Ordinal++
+			if h.PrevTag == "" {
+				h.PrevTag = older.GetTagName()
+				if t := older.GetPublishedAt(); !t.IsZero() {
+					h.PrevAt = t.Time
+				}
+			}
+		}
+		if h.PrevTag != "" {
+			return h, nil
 		}
 		break
 	}
@@ -220,7 +269,7 @@ func (c *Client) PreviousTag(ctx context.Context, installID int64, owner, repo, 
 	for range maxPages {
 		page, resp, err := cl.Repositories.ListTags(ctx, owner, repo, opts)
 		if err != nil {
-			return "", fmt.Errorf("list tags: %w", err)
+			return h, fmt.Errorf("list tags: %w", err)
 		}
 		for _, t := range page {
 			tags = append(tags, t.GetName())
@@ -232,8 +281,9 @@ func (c *Client) PreviousTag(ctx context.Context, installID int64, owner, repo, 
 	}
 	for i, t := range tags {
 		if t == head && i+1 < len(tags) {
-			return tags[i+1], nil
+			h.PrevTag = tags[i+1]
+			return h, nil
 		}
 	}
-	return "", nil
+	return h, nil
 }

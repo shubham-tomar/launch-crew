@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -26,6 +28,8 @@ import (
 	"github.com/shubham-tomar/launchcrew/internal/trigger"
 	"github.com/shubham-tomar/launchcrew/internal/webhook"
 )
+
+var prSuffixRe = regexp.MustCompile(`\s*\(#\d+\)\s*$`)
 
 const rootSHA = "a000000000000000000000000000000000000001"
 
@@ -439,5 +443,77 @@ func TestReleaseJobIgnoresDuplicateRelease(t *testing.T) {
 	}
 	if n, _ := e.q.CountCrewByLaunch(context.Background(), ls[0].ID); n != 4 {
 		t.Fatalf("%d crew, want 4", n)
+	}
+}
+
+// soloEnv is setup with a renderer that records the card it was asked for.
+func soloEnv(t *testing.T, f *githubfake.Server) (*env, *[]any) {
+	t.Helper()
+	e := setup(t)
+	var drawn []any
+	e.gh = f
+	e.handler = trigger.ReleaseJob(trigger.ReleaseDeps{
+		Pool:    e.pool,
+		Trigger: trigger.GitHubRelease{GH: ghClient(t, f), Headlines: stubHeadlines},
+		Cards:   cards.NewUploader(e.r2.URL, "cards", "ak", "sk", "https://cdn.example"),
+		Render: func(c any, _ cards.Preset) ([]byte, error) {
+			drawn = append(drawn, c)
+			return []byte("\x89PNG"), nil
+		},
+	})
+	return e, &drawn
+}
+
+func TestSoloReleaseGetsTheSoloCard(t *testing.T) {
+	f := newFake(t, false)
+	for i := range f.PRs {
+		f.PRs[i].User = githubfake.User{ID: 910010, Login: "captain", Type: "User"}
+	}
+	f.Releases[1].PublishedAt = time.Now().Add(-10*24*time.Hour - time.Hour).UTC().Format(time.RFC3339)
+	e, drawn := soloEnv(t, f)
+	e.deliver(t, false, false)
+	if len(*drawn) != 1 {
+		t.Fatalf("%d cards drawn", len(*drawn))
+	}
+	c, ok := (*drawn)[0].(cards.SoloCard)
+	if !ok {
+		t.Fatalf("card %T, want SoloCard", (*drawn)[0])
+	}
+	if c.Handle != "captain" || c.PrevTag != "v1.1.0" || c.DaysSince != 10 || c.Ordinal != 2 || c.FirstRelease || c.Major ||
+		c.Commits == 0 || c.Added == 0 || len(c.Release) == 0 || c.Release[0].Number == 0 {
+		t.Fatalf("solo card %+v", c)
+	}
+	// Nobody else to invite: the captain's own row only, as before.
+	if ls := e.launches(t); len(ls) != 1 {
+		t.Fatalf("%d launches", len(ls))
+	}
+}
+
+func TestReleaseWithOthersKeepsTheReleaseCard(t *testing.T) {
+	e, drawn := soloEnv(t, newFake(t, false))
+	e.deliver(t, false, false)
+	if len(*drawn) != 1 {
+		t.Fatalf("%d cards drawn", len(*drawn))
+	}
+	if _, ok := (*drawn)[0].(cards.ReleaseCard); !ok {
+		t.Fatalf("card %T, want ReleaseCard", (*drawn)[0])
+	}
+}
+
+// A first release pushed straight to main: no PRs, so the card lists commit subjects.
+func TestSoloReleaseWithoutPRsListsCommits(t *testing.T) {
+	f := newFake(t, true)
+	f.PRs = nil
+	for i := range f.Commits {
+		f.Commits[i].Commit.Message = strings.TrimSpace(prSuffixRe.ReplaceAllString(f.Commits[i].Commit.Message, ""))
+	}
+	e, drawn := soloEnv(t, f)
+	e.deliver(t, false, false)
+	c, ok := (*drawn)[0].(cards.SoloCard)
+	if !ok {
+		t.Fatalf("card %T, want SoloCard", (*drawn)[0])
+	}
+	if !c.FirstRelease || c.DaysSince != -1 || len(c.Release) == 0 || c.Release[0].Number != 0 || c.Release[0].Title == "" {
+		t.Fatalf("solo card %+v", c)
 	}
 }

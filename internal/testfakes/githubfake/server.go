@@ -35,6 +35,8 @@ type Commit struct {
 	Commit struct {
 		Message string `json:"message"`
 	} `json:"commit"`
+	// Author is the GitHub account linked to the commit, nil when none.
+	Author *User `json:"author,omitempty"`
 }
 
 // Label is a PR label.
@@ -78,6 +80,8 @@ type Release struct {
 	Draft      bool   `json:"draft"`
 	Prerelease bool   `json:"prerelease"`
 	HTMLURL    string `json:"html_url"`
+	// PublishedAt is RFC 3339, empty for none.
+	PublishedAt string `json:"published_at,omitempty"`
 }
 
 // Comment is an issue comment.

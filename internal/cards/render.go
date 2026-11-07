@@ -89,6 +89,28 @@ type ReleaseCard struct {
 	Brand                      Brand
 }
 
+// SoloCard is the release card when one person shipped it all: the person
+// leads, with their commit count and line diff, the release's changes (PRs,
+// or commit subjects when there were none), and how long since the last one.
+type SoloCard struct {
+	Name, Handle, AvatarURL string
+	Project, Version        string
+	Commits                 int
+	Added, Deleted          int
+	Release                 []PRLine
+	ReleaseMore             int
+	Date                    time.Time
+	// PrevTag and DaysSince read "42 days since v2.3"; DaysSince < 0 hides it.
+	PrevTag   string
+	DaysSince int
+	// Ordinal is the release's count among the repo's releases; 0 if unknown.
+	Ordinal int
+	// FirstRelease and Major mark milestones on the stub.
+	FirstRelease, Major bool
+	Hero                image.Image
+	Brand               Brand
+}
+
 func hexColor(h string) color.RGBA {
 	r, g, b := parseHex(h)
 	return color.RGBA{uint8(r*255 + 0.5), uint8(g*255 + 0.5), uint8(b*255 + 0.5), 255}
@@ -141,17 +163,20 @@ func Render(c any, p Preset) ([]byte, error) {
 	var (
 		brand        Brand
 		project, ver string
-		crew         int
+		mid          stubMid
 		hero         image.Image
 		drawMain     func(*gg.Context, palette) error
 	)
 	switch v := c.(type) {
 	case ContributorCard:
-		brand, project, ver, crew, hero = v.Brand, v.Project, v.Version, v.CrewCount, v.Hero
+		brand, project, ver, mid, hero = v.Brand, v.Project, v.Version, crewMid(v.CrewCount, v.Version), v.Hero
 		drawMain = func(dc *gg.Context, pl palette) error { return drawContributor(dc, fs, pl, v) }
 	case ReleaseCard:
-		brand, project, ver, crew, hero = v.Brand, v.Project, v.Version, v.CrewCount, v.Hero
+		brand, project, ver, mid, hero = v.Brand, v.Project, v.Version, crewMid(v.CrewCount, v.Version), v.Hero
 		drawMain = func(dc *gg.Context, pl palette) error { return drawRelease(dc, fs, pl, v) }
+	case SoloCard:
+		brand, project, ver, mid, hero = v.Brand, v.Project, v.Version, soloMid(v), v.Hero
+		drawMain = func(dc *gg.Context, pl palette) error { return drawSolo(dc, fs, pl, v) }
 	default:
 		return nil, fmt.Errorf("cards: unsupported card type %T", c)
 	}
@@ -174,7 +199,7 @@ func Render(c any, p Preset) ([]byte, error) {
 	if err := drawMain(dc, pl); err != nil {
 		return nil, err
 	}
-	if err := drawStub(dc, fs, pl, brand, project, ver, crew); err != nil {
+	if err := drawStub(dc, fs, pl, brand, project, ver, mid); err != nil {
 		return nil, err
 	}
 	return encode(ticket(dc.Image()))
@@ -183,6 +208,26 @@ func Render(c any, p Preset) ([]byte, error) {
 // drawContributor is board H: the person, the release's top changes, then
 // repo and version over the release date.
 func drawContributor(dc *gg.Context, fs fontSet, pl palette, v ContributorCard) error {
+	count := v.PRCount
+	if count == 0 && (v.PRNumber > 0 || strings.TrimSpace(v.PRTitle) != "") {
+		count = 1
+	}
+	foot := ""
+	if !v.Date.IsZero() {
+		foot = "Released " + v.Date.Format("02 Jan 2006")
+	}
+	return drawPerson(dc, fs, pl, v, personOpts{count: plural(count, "PR", "PRs"), showCount: count > 0, foot: foot})
+}
+
+// personOpts are what differs between a contributor's card and a solo one:
+// the count in the meta line ("3 PRs", "41 commits") and the foot's right side.
+type personOpts struct {
+	count     string
+	showCount bool
+	foot      string
+}
+
+func drawPerson(dc *gg.Context, fs fontSet, pl palette, v ContributorCard, o personOpts) error {
 	handle := strings.TrimPrefix(strings.TrimSpace(v.Handle), "@")
 	name := keepGlyphs(fs.display, v.Name)
 	if name == "" {
@@ -234,17 +279,13 @@ func drawContributor(dc *gg.Context, fs fontSet, pl palette, v ContributorCard) 
 	if handle != "" {
 		put(mf, pl.muted(), "@"+keepGlyphs(fs.body, handle))
 	}
-	count := v.PRCount
-	if count == 0 && (v.PRNumber > 0 || strings.TrimSpace(v.PRTitle) != "") {
-		count = 1
-	}
-	if count > 0 || v.Added+v.Deleted > 0 {
+	if o.showCount || v.Added+v.Deleted > 0 {
 		if handle != "" {
 			put(mf, pl.line, "|")
 		}
 	}
-	if count > 0 {
-		put(mf, pl.muted(), plural(count, "PR", "PRs"))
+	if o.showCount {
+		put(mf, pl.muted(), o.count)
 	}
 	if v.Added+v.Deleted > 0 {
 		put(monof, addedHex, "+"+strconv.Itoa(v.Added))
@@ -269,9 +310,8 @@ func drawContributor(dc *gg.Context, fs fontSet, pl palette, v ContributorCard) 
 	dc.DrawLine(padL, footY, mainW-padR, footY)
 	dc.Stroke()
 	right := 0.0
-	if !v.Date.IsZero() {
+	if s := keepGlyphs(fs.body, o.foot); s != "" {
 		df := must(face(fs.body, 22))
-		s := "Released " + v.Date.Format("02 Jan 2006")
 		right = textWidth(df, s) + 20
 		dc.SetFontFace(df)
 		setHex(dc, pl.dim)
@@ -369,7 +409,14 @@ func drawPRList(dc *gg.Context, fs fontSet, pl palette, label string, lines []PR
 	}
 	nf := must(face(fs.mono, 24))
 	bf := must(face(fs.body, 24))
-	numW := 78.0
+	// Commit subjects have no numbers: no number column then.
+	numW, moreText := 0.0, " more changes"
+	for _, l := range lines {
+		if l.Number > 0 {
+			numW, moreText = 78.0, " more in the release notes"
+			break
+		}
+	}
 	for _, l := range lines {
 		base := y + 28
 		if l.Number > 0 {
@@ -386,13 +433,13 @@ func drawPRList(dc *gg.Context, fs fontSet, pl palette, label string, lines []PR
 		mf := must(face(fs.body, 22))
 		dc.SetFontFace(mf)
 		setHex(dc, pl.dim)
-		dc.DrawString("+ "+strconv.Itoa(more)+" more in the release notes", padL+numW, y+28)
+		dc.DrawString("+ "+strconv.Itoa(more)+moreText, padL+numW, y+28)
 	}
 }
 
 // drawStub is the tear-off: the repo's logo, name and owner, the collaborator
 // count, and the Launch Crew mark.
-func drawStub(dc *gg.Context, fs fontSet, pl palette, b Brand, project, version string, crew int) error {
+func drawStub(dc *gg.Context, fs fontSet, pl palette, b Brand, project, version string, mid stubMid) error {
 	const tile = 104
 	x, y := float64(stubX), float64(padT)
 	drawLogoTile(dc, fs, pl, b, project, x, y, tile)
@@ -420,12 +467,9 @@ func drawStub(dc *gg.Context, fs fontSet, pl palette, b Brand, project, version 
 		}
 	}
 
-	// Middle: collaborators, else the version.
+	// Middle: collaborators, a milestone, or the version.
 	lf := must(face(fs.label, 22))
-	label, value, tail := "Collaborators", strconv.Itoa(crew), " shipped it"
-	if crew <= 0 {
-		label, value, tail = "Version", keepGlyphs(fs.display, version), ""
-	}
+	label, value, tail := mid.label, keepGlyphs(fs.display, mid.value), mid.tail
 	if value != "" {
 		dc.SetFontFace(lf)
 		setHex(dc, pl.dim)
@@ -455,6 +499,83 @@ func drawStub(dc *gg.Context, fs fontSet, pl palette, b Brand, project, version 
 	setHex(dc, pl.muted())
 	dc.DrawString("Launch Crew", x+40, my+22)
 	return nil
+}
+
+// stubMid is the stub's middle: a caps label over a large value and a small tail.
+type stubMid struct{ label, value, tail string }
+
+// crewMid counts the collaborators, else shows the version.
+func crewMid(crew int, version string) stubMid {
+	if crew <= 0 {
+		return stubMid{"Version", version, ""}
+	}
+	return stubMid{"Collaborators", strconv.Itoa(crew), " shipped it"}
+}
+
+// soloMid names a milestone when there is one, else counts the releases.
+func soloMid(v SoloCard) stubMid {
+	switch {
+	case v.FirstRelease:
+		return stubMid{"Milestone", "First", " release"}
+	case v.Major:
+		return stubMid{"Milestone", "Major", " release"}
+	case v.Ordinal > 0 && v.Ordinal%10 == 0:
+		return stubMid{"Milestone", ordinal(v.Ordinal), " release"}
+	case v.Ordinal > 1:
+		return stubMid{"Releases", strconv.Itoa(v.Ordinal), " shipped"}
+	}
+	return stubMid{"Version", v.Version, ""}
+}
+
+// ordinal is 1st, 2nd, 3rd, 4th ... 11th, 12th, 13th ... 21st.
+func ordinal(n int) string {
+	suffix := "th"
+	if n%100 < 11 || n%100 > 13 {
+		switch n % 10 {
+		case 1:
+			suffix = "st"
+		case 2:
+			suffix = "nd"
+		case 3:
+			suffix = "rd"
+		}
+	}
+	return strconv.Itoa(n) + suffix
+}
+
+// drawSolo is board H for one person: "Shipped solo" over the avatar and
+// name, commits and lines, the release's changes, then repo and version over
+// the time since the last release.
+func drawSolo(dc *gg.Context, fs fontSet, pl palette, v SoloCard) error {
+	pr := 0
+	for _, l := range v.Release {
+		if l.Number > 0 {
+			pr++
+		}
+	}
+	c := ContributorCard{
+		Name: v.Name, Handle: v.Handle, AvatarURL: v.AvatarURL, Role: "Shipped solo",
+		Project: v.Project, Version: v.Version, Release: v.Release, ReleaseMore: v.ReleaseMore,
+		Added: v.Added, Deleted: v.Deleted, Date: v.Date,
+	}
+	return drawPerson(dc, fs, pl, c, personOpts{
+		count: plural(v.Commits, "commit", "commits"), showCount: v.Commits > 0,
+		foot: soloFoot(v),
+	})
+}
+
+// soloFoot is "42 days since v2.3", "1 day since v2.3", or the release date.
+func soloFoot(v SoloCard) string {
+	if v.PrevTag != "" && v.DaysSince >= 0 {
+		if v.DaysSince == 0 {
+			return "Same day as " + v.PrevTag
+		}
+		return plural(v.DaysSince, "day", "days") + " since " + v.PrevTag
+	}
+	if !v.Date.IsZero() {
+		return "Released " + v.Date.Format("02 Jan 2006")
+	}
+	return ""
 }
 
 // drawLogoTile is the stub's square: the captain's logo or the owner's avatar

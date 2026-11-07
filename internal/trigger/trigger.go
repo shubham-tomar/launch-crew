@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/shubham-tomar/launchcrew/internal/drafting"
 )
@@ -57,6 +58,24 @@ type LaunchSpec struct {
 	RepoFullName                                   string
 	ReleaseID                                      int64
 	Captain                                        string
+	// Solo is set when the release author is the only person in it; the
+	// release card then leads with them.
+	Solo *Solo
+}
+
+// Solo is what the solo release card shows about one person's release.
+type Solo struct {
+	Name, Login, AvatarURL string
+	Commits                int
+	Added, Deleted         int
+	// Subjects are the commit subjects, newest first, for a release made
+	// without PRs.
+	Subjects []string
+	// SubjectCount is every such subject, kept or not.
+	SubjectCount int
+	PrevTag      string
+	PrevAt       time.Time
+	Ordinal      int
 }
 
 // Project is the repository name for releases, or the title otherwise.
