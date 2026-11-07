@@ -2,16 +2,16 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import App from '../App'
-import { logoOf } from './Show'
+import { logoOf, safeBack } from './Show'
 
 const toCanvas = vi.hoisted(() => vi.fn(() => Promise.resolve()))
 vi.mock('qrcode', () => ({ default: { toCanvas } }))
 
 afterEach(() => vi.unstubAllGlobals())
 
-function visit() {
+function visit(path = '/l/open1/show') {
   render(
-    <MemoryRouter initialEntries={['/l/open1/show']}>
+    <MemoryRouter initialEntries={[path]}>
       <App />
     </MemoryRouter>,
   )
@@ -99,4 +99,23 @@ test('Escape leaves the slide too', async () => {
   await screen.findByRole('heading', { level: 1 })
   await userEvent.keyboard('{Escape}')
   expect(await screen.findByText(/No launches yet/)).toBeInTheDocument()
+})
+
+test('Close returns to the launch named in ?back=, which must be a launch page', async () => {
+  const f = vi.fn((url: string) =>
+    Promise.resolve(
+      url.includes('/show')
+        ? new Response(JSON.stringify({ title: 'T', shortUrl: 'https://lc.test/l/open1' }))
+        : new Response(JSON.stringify({ error: 'not_found', message: 'gone' }), { status: 404 }),
+    ),
+  )
+  vi.stubGlobal('fetch', f)
+  visit('/l/open1/show?back=%2Fcaptain%2Flaunches%2Fl1')
+  await screen.findByRole('heading', { level: 1 })
+  await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+  await vi.waitFor(() => expect(f).toHaveBeenCalledWith('/api/captain/launches/l1', undefined))
+  expect(safeBack('/captain/launches/l1')).toBe('/captain/launches/l1')
+  for (const bad of ['https://evil.test', '//evil.test', '/captain/launches/l1/../../x', '/settings', null]) {
+    expect(safeBack(bad)).toBeNull()
+  }
 })

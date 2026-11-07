@@ -269,7 +269,7 @@ export default function LaunchDetail() {
             <section className="cap-section panel cap-share" aria-labelledby="cap-share">
               <h2 id="cap-share">Share at the event</h2>
               <div className="cap-share-row">
-                <a className="btn btn-secondary btn-with-icon" href={detail.showUrl}>
+                <a className="btn btn-secondary btn-with-icon" href={`${detail.showUrl}?back=${encodeURIComponent(`/captain/launches/${detail.id}`)}`}>
                   <Icon name="qr" />
                   Show QR at the event
                 </a>

@@ -83,3 +83,17 @@ UPDATE crew_drafts SET status = $2, external_link = $3 WHERE id = $1;
 -- name: MarkCaptainDraftFromBuffer :execrows
 -- The poll's verdict on a queued captain post; a post no longer queued is left alone.
 UPDATE captain_drafts SET status = $2, external_link = $3 WHERE id = $1 AND status = 'queued';
+
+-- name: ListUnlinkedCrewPostsByLaunch :many
+-- Crew posts Buffer sent whose link on the network is still unknown.
+SELECT d.id, d.channel_id, d.buffer_post_id, m.buffer_account_id
+FROM crew_drafts d
+JOIN crew_members m ON m.id = d.crew_member_id
+WHERE m.launch_id = $1 AND d.status = 'posted' AND d.external_link = '' AND d.buffer_post_id IS NOT NULL
+ORDER BY m.buffer_account_id, d.channel_id;
+
+-- name: SetCrewDraftLink :exec
+UPDATE crew_drafts SET external_link = $2 WHERE id = $1 AND external_link = '';
+
+-- name: SetCaptainDraftLink :exec
+UPDATE captain_drafts SET external_link = $2 WHERE id = $1 AND external_link = '';

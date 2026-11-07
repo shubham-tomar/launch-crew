@@ -1,6 +1,6 @@
 import QRCode from 'qrcode'
 import { useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { ApiError, showInfo, type ShowInfo } from '../api'
 import Icon from '../components/Icon'
 import Wordmark from '../components/Wordmark'
@@ -97,19 +97,29 @@ async function paint(canvas: HTMLCanvasElement, text: string, logo: Logo) {
   drawPlane(ctx, mid, size * 0.7)
 }
 
+// Only a captain launch page is a place to go back to; anything else in ?back= is ignored.
+export function safeBack(v: string | null): string | null {
+  return v && /^\/captain\/launches\/[\w-]+$/.test(v) ? v : null
+}
+
 export default function Show() {
   const openToken = useParams().openToken ?? ''
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const [view, setView] = useState<ShowInfo>()
   const [error, setError] = useState<ApiError>()
   const [failed, setFailed] = useState(false)
   const canvas = useRef<HTMLCanvasElement>(null)
 
-  // The slide fills the screen, so it needs its own way out: back to the page that opened
-  // it when there is one, else to the captain's launches. Escape does the same.
+  // The slide fills the screen, so it needs its own way out: the launch page named in
+  // ?back= (the captain's button opens the slide with a full page load, so there is no
+  // in-app history), else the page that opened it, else the captain's launches. Escape
+  // does the same.
+  const back = safeBack(searchParams.get('back'))
   const close = () => {
-    if (location.key !== 'default') navigate(-1)
+    if (back) navigate(back)
+    else if (location.key !== 'default') navigate(-1)
     else navigate('/captain')
   }
 
@@ -119,9 +129,9 @@ export default function Show() {
     }
     document.addEventListener('keydown', key)
     return () => document.removeEventListener('keydown', key)
-    // close only reads location.key and navigate, which change with the route
+    // close only reads back, location.key and navigate, which change with the route
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.key])
+  }, [location.key, back])
 
   useEffect(() => {
     let live = true

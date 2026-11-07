@@ -23,6 +23,7 @@ import (
 	"github.com/shubham-tomar/launchcrew/internal/db/sqlc"
 	"github.com/shubham-tomar/launchcrew/internal/github"
 	"github.com/shubham-tomar/launchcrew/internal/jobs"
+	"github.com/shubham-tomar/launchcrew/internal/mail"
 	"github.com/shubham-tomar/launchcrew/internal/preflight"
 	"github.com/shubham-tomar/launchcrew/internal/trigger"
 )
@@ -71,6 +72,8 @@ type Deps struct {
 	PostTimeout time.Duration
 	// AllowLoopback lets the hero fetch reach loopback. Tests only.
 	AllowLoopback bool
+	// Mail sends the captain's "draft ready" email; nil sends none.
+	Mail mail.Sender
 }
 
 // RefreshChannels re-reads the owner's Buffer channels, bypassing the cache,

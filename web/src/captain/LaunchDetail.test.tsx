@@ -357,7 +357,8 @@ test('manual launches get a Share at the event panel with real buttons', async (
   const show = within(panel).getByRole('link', { name: 'Show QR at the event' })
   const png = within(panel).getByRole('link', { name: 'Download PNG' })
   expect(show).toHaveClass('btn', 'btn-secondary')
-  expect(show).toHaveAttribute('href', '/l/abc/show')
+  // The slide opens with a full page load, so it is told which launch Close returns to.
+  expect(show).toHaveAttribute('href', '/l/abc/show?back=%2Fcaptain%2Flaunches%2Fl1')
   expect(png).toHaveClass('btn', 'btn-secondary')
   expect(png).toHaveAttribute('href', '/l/abc/card.png')
   expect(png).toHaveAttribute('download')
@@ -514,6 +515,20 @@ test("a crew member's posts link out once sent and say where they are until then
   const list = await screen.findByRole('list', { name: 'Posts by Maya Kapoor' })
   expect(within(list).getByRole('link', { name: 'View on X' })).toHaveAttribute('href', 'https://x.com/mayakp/status/7')
   expect(within(list).getByText('Bluesky · queued')).toBeInTheDocument()
+})
+
+test('a sent crew post without its link yet does not repeat "posted" under the badge', async () => {
+  mockApi({
+    detail: detail({
+      status: 'closed',
+      crew: [member({ state: 'posted', posts: [{ network: 'twitter', status: 'posted', externalLink: '' }] })],
+      counts: { in: 1, total: 1 },
+    }),
+  })
+  visit('/captain/launches/l1')
+  const list = await screen.findByRole('list', { name: 'Posts by Maya Kapoor' })
+  expect(within(list).getByText('X · link not ready yet')).toBeInTheDocument()
+  expect(within(list).queryByText(/· posted/)).toBeNull()
 })
 
 test('post actions and the PR hide toggle are icon buttons with full names', async () => {

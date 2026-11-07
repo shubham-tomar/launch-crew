@@ -14,6 +14,7 @@ import (
 
 	"github.com/shubham-tomar/launchcrew/internal/crew"
 	"github.com/shubham-tomar/launchcrew/internal/db/sqlc"
+	"github.com/shubham-tomar/launchcrew/internal/mail"
 	"github.com/shubham-tomar/launchcrew/internal/session"
 )
 
@@ -23,12 +24,16 @@ type Settings struct {
 	deps         crew.Deps
 	sessions     *session.Store
 	supportEmail string
+	mail         mail.Sender
 }
 
 // NewSettings returns the router for /me, /me/opt-out (POST to opt out,
 // DELETE to undo) and /opt-out.
-func NewSettings(deps crew.Deps, sessions *session.Store, supportEmail string) http.Handler {
+func NewSettings(deps crew.Deps, sessions *session.Store, supportEmail string, opts ...SettingsOption) http.Handler {
 	s := &Settings{deps: deps, sessions: sessions, supportEmail: supportEmail}
+	for _, o := range opts {
+		o(s)
+	}
 	r := chi.NewRouter()
 	r.NotFound(notFound)
 	r.MethodNotAllowed(methodNotAllowed)
@@ -36,6 +41,10 @@ func NewSettings(deps crew.Deps, sessions *session.Store, supportEmail string) h
 	r.Post("/me/opt-out", s.optOut)
 	r.Delete("/me/opt-out", s.optIn)
 	r.Delete("/me", s.delete)
+	r.Put("/me/notify", s.setNotify)
+	r.Post("/me/notify/email", s.startEmail)
+	r.Delete("/me/notify/email", s.clearEmail)
+	r.Get("/me/notify/verify", s.verifyEmail)
 	r.Post("/opt-out", s.tokenOptOut)
 	return r
 }
@@ -48,6 +57,8 @@ type meView struct {
 	Launches        int64    `json:"launches"`
 	CrewRows        int64    `json:"crewRows"`
 	SupportEmail    string   `json:"supportEmail"`
+	// Notify is how a captain hears about new drafts; absent for crew only.
+	Notify *notifyView `json:"notify,omitempty"`
 }
 
 func (s *Settings) fail(w http.ResponseWriter, r *http.Request, err error) {
@@ -77,7 +88,9 @@ func (s *Settings) me(w http.ResponseWriter, r *http.Request) {
 	if v.BufferConnected, err = q.UserHasBufferConnection(ctx, uid); err == nil {
 		if v.OptedOut, err = q.UserIsOptedOut(ctx, uid); err == nil {
 			if v.Launches, err = q.CountUserLaunches(ctx, nullUID); err == nil {
-				v.CrewRows, err = q.CountUserCrewRows(ctx, nullUID)
+				if v.CrewRows, err = q.CountUserCrewRows(ctx, nullUID); err == nil {
+					v.Notify, err = s.notify(ctx, uid, v.Launches)
+				}
 			}
 		}
 	}

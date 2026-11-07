@@ -366,9 +366,25 @@ export type Me = {
   launches: number
   crewRows: number
   supportEmail: string
+  /** How a captain hears that a release made a draft; absent for crew only. */
+  notify?: Notify
+}
+
+/** Email is on only for a verified address; emailPending awaits its link. */
+export type Notify = {
+  github: boolean
+  releaseNotes: boolean
+  email: boolean
+  emailAddress: string
+  emailPending: string
+  mailAvailable: boolean
 }
 
 export const getMe = () => call<Me>('/api/me')
+export const setNotify = (p: { github: boolean; releaseNotes: boolean; email: boolean }) =>
+  call<Notify>('/api/me/notify', json('PUT', p))
+export const startNotifyEmail = (address: string) => call<Notify>('/api/me/notify/email', json('POST', { address }))
+export const clearNotifyEmail = () => call<Notify>('/api/me/notify/email', json('DELETE'))
 // scope says how far the opt-out reached: every future launch ('all') or just
 // the launch the token belongs to ('launch').
 export type OptOut = { optedOut: boolean; scope: 'all' | 'launch' }

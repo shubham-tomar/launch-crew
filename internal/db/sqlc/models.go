@@ -54,6 +54,18 @@ type CaptainDraft struct {
 	ExternalLink string        `json:"external_link"`
 }
 
+type CaptainNotify struct {
+	UserID       uuid.UUID          `json:"user_id"`
+	Github       bool               `json:"github"`
+	ReleaseNotes bool               `json:"release_notes"`
+	Email        bool               `json:"email"`
+	EmailAddress string             `json:"email_address"`
+	EmailPending string             `json:"email_pending"`
+	VerifyHash   []byte             `json:"verify_hash"`
+	VerifySentAt pgtype.Timestamptz `json:"verify_sent_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 type CaptainSetting struct {
 	UserID          uuid.UUID          `json:"user_id"`
 	CommentTemplate string             `json:"comment_template"`
@@ -152,6 +164,7 @@ type Launch struct {
 	OpenTokenEnc    []byte             `json:"open_token_enc"`
 	ReleaseID       pgtype.Int8        `json:"release_id"`
 	QrLogo          string             `json:"qr_logo"`
+	CaptainNotified []string           `json:"captain_notified"`
 }
 
 type LaunchAsset struct {

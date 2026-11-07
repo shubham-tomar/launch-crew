@@ -377,6 +377,11 @@ func TestDropsBotsAndOptedOut(t *testing.T) {
 	if want := cards.PresetFor(l.ID); !l.CardPreset.Valid || cards.Presets[l.CardPreset.Int16] != want {
 		t.Fatalf("card preset %v, want %s", l.CardPreset, want.Name)
 	}
+	// The captain hears about the draft.
+	var notifyJobs int
+	if err := e.pool.QueryRow(context.Background(), `SELECT count(*) FROM jobs WHERE kind = 'notify_captain' AND launch_id = $1`, l.ID).Scan(&notifyJobs); err != nil || notifyJobs != 1 {
+		t.Fatalf("notify jobs %d, %v", notifyJobs, err)
+	}
 	var changes []struct {
 		PRNumber int  `json:"pr_number"`
 		Hidden   bool `json:"hidden"`

@@ -14,4 +14,5 @@ const (
 	ReencryptTokens Kind = "reencrypt_tokens"
 	VoicedDrafts    Kind = "voiced_drafts"
 	SendComments    Kind = "send_comments"
+	NotifyCaptain   Kind = "notify_captain"
 )

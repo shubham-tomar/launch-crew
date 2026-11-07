@@ -272,7 +272,16 @@ func (d ReleaseDeps) save(ctx context.Context, render func(any, cards.Preset) ([
 			}
 		}
 	}
+	// Tell the captain the draft is waiting, the ways they chose in settings.
+	if _, err := jobs.Enqueue(ctx, q, jobs.NotifyCaptain, NotifyPayload{LaunchID: l.ID}, time.Time{}, &l.ID); err != nil {
+		return fmt.Errorf("enqueue notify: %w", err)
+	}
 	return tx.Commit(ctx)
+}
+
+// NotifyPayload is the payload of jobs.NotifyCaptain.
+type NotifyPayload struct {
+	LaunchID uuid.UUID `json:"launch_id"`
 }
 
 func presetIndex(p cards.Preset) int16 {

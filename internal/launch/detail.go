@@ -166,11 +166,16 @@ func Detail(ctx context.Context, d Deps, id uuid.UUID) (DetailView, error) {
 			return DetailView{}, err
 		}
 	}
-	if l.Status == statusLaunched && s.conn != nil && l.LaunchAt.Valid && !l.LaunchAt.Time.After(d.now()) &&
+	if l.Status == statusLaunched && l.LaunchAt.Valid && !l.LaunchAt.Time.After(d.now()) &&
 		throttleCaptainRefresh(l.ID, d.now()) {
 		// Never fails the page: a Buffer error leaves the drafts as they are.
-		if err := refreshCaptainDrafts(ctx, d, l, s.conn); err != nil {
-			log.Printf("launch %s: refresh captain posts: %v", l.ID, err)
+		if s.conn != nil {
+			if err := refreshCaptainDrafts(ctx, d, l, s.conn); err != nil {
+				log.Printf("launch %s: refresh captain posts: %v", l.ID, err)
+			}
+		}
+		if err := backfillLinks(ctx, d, l); err != nil {
+			log.Printf("launch %s: post links: %v", l.ID, err)
 		}
 	}
 	drafts, err := d.Q.ListCaptainDrafts(ctx, l.ID)

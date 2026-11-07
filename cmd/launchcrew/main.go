@@ -31,6 +31,7 @@ import (
 	"github.com/shubham-tomar/launchcrew/internal/identity"
 	"github.com/shubham-tomar/launchcrew/internal/jobs"
 	"github.com/shubham-tomar/launchcrew/internal/launch"
+	"github.com/shubham-tomar/launchcrew/internal/mail"
 	"github.com/shubham-tomar/launchcrew/internal/preflight"
 	"github.com/shubham-tomar/launchcrew/internal/session"
 	"github.com/shubham-tomar/launchcrew/internal/trigger"
@@ -88,6 +89,7 @@ func main() {
 		BaseURL:   cfg.BaseURL,
 		Keyring:   keyring,
 	}
+	mailer := mail.New(cfg.MailAPIKey, cfg.MailFrom)
 	launchDeps := launch.Deps{
 		Q: q, Pool: pool, Buffer: buf, GitHub: ghc, Cards: crewDeps.Cards,
 		Preflight: preflight.Deps{
@@ -97,12 +99,13 @@ func main() {
 		Keyring:       keyring,
 		BaseURL:       cfg.BaseURL,
 		AllowLoopback: e2e != nil,
+		Mail:          mailer,
 	}
 	deps := httpserver.Deps{
 		Ready:    pool.Ping,
 		Crew:     api.NewCrew(crewDeps, sessions),
 		Captain:  api.NewCaptain(launchDeps, sessions),
-		Settings: api.NewSettings(crewDeps, sessions, cfg.SupportEmail),
+		Settings: api.NewSettings(crewDeps, sessions, cfg.SupportEmail, api.WithMail(mailer)),
 		BufferOAuth: &auth.BufferOAuth{
 			ClientID:     cfg.BufferClientID,
 			ClientSecret: cfg.BufferClientSecret,
@@ -206,12 +209,13 @@ func workerHandlers(cd crew.Deps, ld launch.Deps, ghc *github.Client, claude *dr
 				return drafting.PickHeadlines(ctx, claude, notes, prs)
 			}},
 		}),
-		jobs.VoicedDrafts: crew.VoicedDraftsHandler(cd),
-		jobs.SweepOpened:  crew.SweepOpenedHandler(cd),
-		jobs.LaunchJob:    launch.LaunchJobHandler(ld),
-		jobs.SendComments: launch.SendCommentsHandler(ld),
-		jobs.CloseWindow:  launch.CloseWindowHandler(ld),
-		jobs.PollStatus:   launch.PollStatusHandler(ld),
+		jobs.VoicedDrafts:  crew.VoicedDraftsHandler(cd),
+		jobs.SweepOpened:   crew.SweepOpenedHandler(cd),
+		jobs.LaunchJob:     launch.LaunchJobHandler(ld),
+		jobs.SendComments:  launch.SendCommentsHandler(ld),
+		jobs.CloseWindow:   launch.CloseWindowHandler(ld),
+		jobs.PollStatus:    launch.PollStatusHandler(ld),
+		jobs.NotifyCaptain: launch.NotifyCaptainHandler(ld),
 
 		jobs.ReencryptTokens: jobs.ReencryptHandler(cd.Q, cd.Keyring),
 	}

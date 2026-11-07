@@ -49,8 +49,9 @@ export function CopyLink({ url, label, field }: { url: string; label: string; fi
   )
 }
 
+// The row's badge already says "posted"; a sent post without its link yet says what is missing instead.
 const postWord = (p: CrewPost) =>
-  p.status === 'posted' ? 'posted' : p.status === 'queued' ? 'queued' : p.status === 'draft' ? 'draft' : 'failed in Buffer'
+  p.status === 'posted' ? 'link not ready yet' : p.status === 'queued' ? 'queued' : p.status === 'draft' ? 'draft' : 'failed in Buffer'
 
 // Where a crew member's posts are: a link to each one on its network once sent, else its state.
 function CrewPosts({ posts, name }: { posts: CrewPost[]; name: string }) {
@@ -65,7 +66,10 @@ function CrewPosts({ posts, name }: { posts: CrewPost[]; name: string }) {
               View on {serviceName(p.network)}
             </a>
           ) : (
-            <span className={p.status === 'failed_in_buffer' ? 'cap-crew-post cap-err' : 'cap-crew-post cap-muted'}>
+            <span
+              className={p.status === 'failed_in_buffer' ? 'cap-crew-post cap-err' : 'cap-crew-post cap-muted'}
+              title={p.status === 'posted' ? 'Buffer has not shared the link yet; reload in a minute' : undefined}
+            >
               <ServiceIcon service={p.network} />
               {serviceName(p.network)} · {postWord(p)}
             </span>

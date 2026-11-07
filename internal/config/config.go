@@ -29,7 +29,11 @@ type Config struct {
 	R2SecretKey         string
 	R2PublicBase        string
 	SupportEmail        string
-	WorkerConcurrency   int
+	// MailAPIKey (Resend) and MailFrom send the captain's emails; email is
+	// hidden in settings when either is empty.
+	MailAPIKey        string
+	MailFrom          string
+	WorkerConcurrency int
 }
 
 // Load reads the environment and reports all missing required variables at once.
@@ -74,6 +78,8 @@ func Load() (Config, error) {
 		R2SecretKey:         req("R2_SECRET_KEY"),
 		R2PublicBase:        req("R2_PUBLIC_BASE"),
 		SupportEmail:        os.Getenv("SUPPORT_EMAIL"),
+		MailAPIKey:          os.Getenv("RESEND_API_KEY"),
+		MailFrom:            os.Getenv("MAIL_FROM"),
 		WorkerConcurrency:   workers,
 	}
 	if len(missing) > 0 {

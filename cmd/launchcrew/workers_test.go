@@ -14,7 +14,7 @@ func TestWorkerHandlesEveryEnqueuedKind(t *testing.T) {
 	h := workerHandlers(crew.Deps{}, launch.Deps{}, nil, nil)
 	for _, k := range []jobs.Kind{
 		jobs.ProcessRelease, jobs.VoicedDrafts, jobs.SweepOpened, jobs.LaunchJob,
-		jobs.SendComments, jobs.CloseWindow, jobs.PollStatus, jobs.ReencryptTokens,
+		jobs.SendComments, jobs.CloseWindow, jobs.PollStatus, jobs.ReencryptTokens, jobs.NotifyCaptain,
 	} {
 		if h[k] == nil {
 			t.Errorf("no handler for %s", k)

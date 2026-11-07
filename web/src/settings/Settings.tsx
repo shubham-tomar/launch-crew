@@ -7,6 +7,7 @@ import SchemeSwitch from '../components/SchemeSwitch'
 import Shell from '../components/Shell'
 import Loader from '../components/Loader'
 import NavPill from '../components/NavPill'
+import NotifySettings from './NotifySettings'
 import './settings.css'
 
 type Phase = 'idle' | 'confirm' | 'busy'
@@ -28,7 +29,8 @@ function Stored({ me }: { me: Me }) {
 }
 
 export default function Settings() {
-  const token = useSearchParams()[0].get('token') ?? ''
+  const [params] = useSearchParams()
+  const token = params.get('token') ?? ''
   const [me, setMe] = useState<Me>()
   const [loadFailed, setLoadFailed] = useState(false)
   const [optedOut, setOptedOut] = useState<Scope>()
@@ -109,6 +111,7 @@ export default function Settings() {
     body = (
       <>
         {signedIn && (isEmpty(me) ? <p>Nothing stored about you yet.</p> : <Stored me={me} />)}
+        {signedIn && me.notify && <NotifySettings initial={me.notify} emailResult={params.get('email')} />}
         {!signedIn && !viaToken && (
           <p>
             <a className="btn btn-primary" href="/auth/buffer/start?return_to=/settings">

@@ -73,12 +73,66 @@ func (c *Client) CommentOnRelease(ctx context.Context, installID int64, owner, r
 	if err != nil {
 		return fmt.Errorf("get release %d: %w", releaseID, err)
 	}
-	notes, _, _ := strings.Cut(rel.GetBody(), ReleaseSection)
+	// The roll call replaces the "draft is ready" note: the launch is out.
+	notes, _, _ := strings.Cut(WithDraftNote(rel.GetBody(), ""), ReleaseSection)
 	notes = strings.TrimRight(notes, "\n")
 	if notes != "" {
 		notes += "\n\n"
 	}
 	updated := notes + ReleaseSection + "\n" + body
+	if _, _, err := cl.Repositories.UpdateRelease(ctx, owner, repo, releaseID, gh.UpdateReleaseRequest{Body: &updated}); err != nil {
+		return fmt.Errorf("edit release %d: %w", releaseID, err)
+	}
+	return nil
+}
+
+// Draft note markers fence the line that tells the captain a launch draft is
+// waiting. The roll call removes it.
+const (
+	DraftNoteStart = "<!-- launchcrew:draft -->"
+	DraftNoteEnd   = "<!-- /launchcrew:draft -->"
+)
+
+// WithDraftNote returns body with its draft note replaced by note, or
+// removed when note is empty. A new note goes at the end, above any roll call.
+func WithDraftNote(body, note string) string {
+	if i := strings.Index(body, DraftNoteStart); i >= 0 {
+		rest := body[i:]
+		if j := strings.Index(rest, DraftNoteEnd); j >= 0 {
+			body = strings.TrimRight(body[:i], "\n") + rest[j+len(DraftNoteEnd):]
+		}
+	}
+	if note == "" {
+		return body
+	}
+	block := DraftNoteStart + "\n" + note + "\n" + DraftNoteEnd
+	notes, roll, hasRoll := strings.Cut(body, ReleaseSection)
+	notes = strings.TrimRight(notes, "\n")
+	if notes != "" {
+		notes += "\n\n"
+	}
+	out := notes + block
+	if hasRoll {
+		out += "\n\n" + ReleaseSection + roll
+	}
+	return out
+}
+
+// SetReleaseDraftNote writes note into the release body between the draft
+// note markers, keeping everything else.
+func (c *Client) SetReleaseDraftNote(ctx context.Context, installID int64, owner, repo string, releaseID int64, note string) error {
+	cl, err := c.installation(installID)
+	if err != nil {
+		return err
+	}
+	rel, _, err := cl.Repositories.GetRelease(ctx, owner, repo, releaseID)
+	if err != nil {
+		return fmt.Errorf("get release %d: %w", releaseID, err)
+	}
+	updated := WithDraftNote(rel.GetBody(), note)
+	if updated == rel.GetBody() {
+		return nil
+	}
 	if _, _, err := cl.Repositories.UpdateRelease(ctx, owner, repo, releaseID, gh.UpdateReleaseRequest{Body: &updated}); err != nil {
 		return fmt.Errorf("edit release %d: %w", releaseID, err)
 	}

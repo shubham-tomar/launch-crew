@@ -151,3 +151,76 @@ test('opt-out with no linked GitHub account says so instead of succeeding', asyn
   expect(await screen.findByRole('alert')).toHaveTextContent('We found no GitHub account to opt out. Use the link from a PR comment.')
   expect(screen.queryByText(everywhere)).toBeNull()
 })
+
+describe('how a captain hears about drafts', () => {
+  const notify = { github: true, releaseNotes: false, email: false, emailAddress: '', emailPending: '', mailAvailable: true }
+
+  function mockNotify(m: Me, answers: Record<string, (body: unknown) => [number, unknown]>) {
+    const sent: { method: string; url: string; body: unknown }[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET'
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      sent.push({ method, url, body })
+      const res = (status: number, b: unknown) => Promise.resolve(new Response(JSON.stringify(b), { status }))
+      if (url === '/api/me' && method === 'GET') return res(200, m)
+      const a = answers[`${method} ${url}`]
+      return a ? res(...a(body)) : res(404, { error: 'not_found' })
+    }))
+    return sent
+  }
+
+  test('crew without repos see no notification choices', async () => {
+    mockNotify(me({ crewRows: 1 }), {})
+    visit()
+    await screen.findByText(/crew invite/)
+    expect(screen.queryByRole('heading', { name: 'When a release makes a draft' })).toBeNull()
+  })
+
+  test('GitHub is on by default and a change saves at once', async () => {
+    const sent = mockNotify(me({ launches: 1, notify }), {
+      'PUT /api/me/notify': (b) => [200, { ...notify, ...(b as object) }],
+    })
+    visit()
+    const gh = await screen.findByRole('checkbox', { name: /@mention me on GitHub/ })
+    expect(gh).toBeChecked()
+    const notes = screen.getByRole('checkbox', { name: /Add a link to the release notes/ })
+    expect(notes).not.toBeChecked()
+    await userEvent.click(notes)
+    expect(await screen.findByText('Saved.')).toBeInTheDocument()
+    expect(notes).toBeChecked()
+    expect(sent.find((c) => c.method === 'PUT')?.body).toEqual({ github: true, releaseNotes: true, email: false })
+  })
+
+  test('email asks for an address and sends a link before it turns on', async () => {
+    const sent = mockNotify(me({ launches: 1, notify }), {
+      'POST /api/me/notify/email': (b) => [200, { ...notify, emailPending: (b as { address: string }).address }],
+    })
+    visit()
+    await userEvent.click(await screen.findByRole('checkbox', { name: /Email me/ }))
+    await userEvent.type(screen.getByLabelText('Your email'), 'cap@lc.test')
+    await userEvent.click(screen.getByRole('button', { name: 'Send link' }))
+    expect(await screen.findByText(/We sent a link to cap@lc.test/)).toBeInTheDocument()
+    expect(sent.some((c) => c.method === 'PUT')).toBe(false)
+  })
+
+  test('a verified address can be turned off, and the link result is shown', async () => {
+    const on = { ...notify, email: true, emailAddress: 'cap@lc.test' }
+    mockNotify(me({ launches: 1, notify: on }), {
+      'PUT /api/me/notify': (b) => [200, { ...on, ...(b as object) }],
+    })
+    visit('/settings?email=verified')
+    expect(await screen.findByText(/Email confirmed/)).toBeInTheDocument()
+    const email = screen.getByRole('checkbox', { name: /Email me/ })
+    expect(email).toBeChecked()
+    expect(screen.getByText('To cap@lc.test.')).toBeInTheDocument()
+    await userEvent.click(email)
+    await vi.waitFor(() => expect(email).not.toBeChecked())
+  })
+
+  test('without a mail provider email is shown but cannot be chosen', async () => {
+    mockNotify(me({ launches: 1, notify: { ...notify, mailAvailable: false } }), {})
+    visit()
+    expect(await screen.findByRole('checkbox', { name: /Email me/ })).toBeDisabled()
+    expect(screen.getByText('Email is not set up on this server yet.')).toBeInTheDocument()
+  })
+})

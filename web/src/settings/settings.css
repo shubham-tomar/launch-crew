@@ -39,3 +39,50 @@
   color: var(--color-text-muted);
   font-size: var(--type-small-size);
 }
+
+.settings-notify {
+  display: grid;
+  gap: var(--space-sm);
+  margin-block-start: var(--space-lg);
+  padding-block-start: var(--space-md);
+  border-block-start: 1px solid var(--color-hairline);
+}
+
+.settings-subtitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--type-name-size);
+  font-weight: var(--type-heading-weight);
+}
+
+.settings-choices {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.settings-email {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.settings-email-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.settings-email-row .field {
+  flex: 1 1 16rem;
+  inline-size: auto;
+}
+
+.settings-inline {
+  min-block-size: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent-strong);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
