@@ -53,6 +53,19 @@ func TestSPAFallback(t *testing.T) {
 	}
 }
 
+func TestUnknownPathRejectsWrites(t *testing.T) {
+	h := httpserver.New(httpserver.Deps{})
+	for _, p := range []string{"/webhooks/github.", "/webhook/github", "/captain/anything"} {
+		for _, m := range []string{"POST", "PUT", "DELETE", "PATCH"} {
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, httptest.NewRequest(m, p, strings.NewReader("{}")))
+			if rr.Code != 404 {
+				t.Fatalf("%s %s: got %d, want 404", m, p, rr.Code)
+			}
+		}
+	}
+}
+
 func TestE2ERoutesAbsentByDefault(t *testing.T) {
 	h := httpserver.New(httpserver.Deps{})
 	for _, m := range []string{"GET", "POST"} {

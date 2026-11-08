@@ -129,6 +129,8 @@ func apiNotFound(w http.ResponseWriter, _ *http.Request) {
 }
 
 // spaHandler serves built assets, falling back to index.html for client routes.
+// Only GET and HEAD are pages; any other method on an unknown path is a 404,
+// so a mistyped webhook URL fails visibly instead of getting a 200 page.
 func spaHandler() http.Handler {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
@@ -136,6 +138,10 @@ func spaHandler() http.Handler {
 	}
 	files := http.FileServerFS(sub)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			apiNotFound(w, r)
+			return
+		}
 		index, err := fs.ReadFile(sub, "index.html")
 		if err != nil {
 			http.Error(w, "front end not built", http.StatusServiceUnavailable)
