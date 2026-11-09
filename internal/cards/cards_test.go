@@ -349,6 +349,43 @@ func TestAccentTooDarkFallsBack(t *testing.T) {
 	}
 }
 
+func TestBrandColoursReplaceFieldAndType(t *testing.T) {
+	if got := (Brand{}).Apply(goldenPreset); got != goldenPreset {
+		t.Fatalf("no colours changed the preset: %+v", got)
+	}
+	// A light background alone gets ink type and drops the tinted eyebrow.
+	light := Brand{Background: "#f4efe6"}.Apply(goldenPreset)
+	if light.Field != "#F4EFE6" || light.Type != darkType || light.Eyebrow != "" || light.Muted != "" || light.Mark != darkType {
+		t.Fatalf("light background: %+v", light)
+	}
+	// A readable text colour wins; an unreadable one is ignored.
+	if got := (Brand{Background: "#F4EFE6", Text: "#4a45d1"}).Apply(goldenPreset).Type; got != "#4A45D1" {
+		t.Fatalf("readable text = %s", got)
+	}
+	if got := (Brand{Background: "#F4EFE6", Text: "#FFFFFF"}).Apply(goldenPreset).Type; got != darkType {
+		t.Fatalf("unreadable text kept: %s", got)
+	}
+	// Text alone sits on the preset's field.
+	if got := (Brand{Text: "#E8EBF2"}).Apply(goldenPreset); got.Field != goldenPreset.Field || got.Type != "#E8EBF2" {
+		t.Fatalf("text only: %+v", got)
+	}
+	// The accent falls back to the new type when it cannot read on the new field.
+	p := Brand{Background: "#F4EFE6"}.Apply(goldenPreset)
+	if got := paletteOf(p, "#ADA9FF").accent; got != darkType {
+		t.Fatalf("pale accent on light field = %s", got)
+	}
+	// The card renders on the custom field.
+	png, err := Render(ContributorCard{Name: "Ada", Handle: "ada", Project: "rocket", Version: "v1.0.0",
+		Brand: Brand{Owner: "acme", Background: "#F4EFE6", Text: "#4A45D1"}}, goldenPreset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img := decodePNG(t, png)
+	if r, g, b, _ := img.At(cardW/2, cardH-20).RGBA(); r>>8 != 0xF4 || g>>8 != 0xEF || b>>8 != 0xE6 {
+		t.Fatalf("field pixel = %02X%02X%02X", r>>8, g>>8, b>>8)
+	}
+}
+
 func TestGitHubMarkPathParses(t *testing.T) {
 	toks := pathTokens("A8.013 8.013 0 0016 8")
 	var vs []float64

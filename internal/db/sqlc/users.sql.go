@@ -44,7 +44,7 @@ func (q *Queries) GetGitHubIdentity(ctx context.Context, githubUserID int64) (Gi
 }
 
 const getRepoByInstallationAndName = `-- name: GetRepoByInstallationAndName :one
-SELECT id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent FROM repos WHERE installation_id = $1 AND lower(full_name) = lower($2::text)
+SELECT id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent, card_bg, card_text FROM repos WHERE installation_id = $1 AND lower(full_name) = lower($2::text)
 `
 
 type GetRepoByInstallationAndNameParams struct {
@@ -66,12 +66,14 @@ func (q *Queries) GetRepoByInstallationAndName(ctx context.Context, arg GetRepoB
 		&i.LogoUrl,
 		&i.LogoPng,
 		&i.Accent,
+		&i.CardBg,
+		&i.CardText,
 	)
 	return i, err
 }
 
 const getReposByInstallation = `-- name: GetReposByInstallation :many
-SELECT id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent FROM repos WHERE installation_id = $1
+SELECT id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent, card_bg, card_text FROM repos WHERE installation_id = $1
 `
 
 func (q *Queries) GetReposByInstallation(ctx context.Context, installationID int64) ([]Repo, error) {
@@ -94,6 +96,8 @@ func (q *Queries) GetReposByInstallation(ctx context.Context, installationID int
 			&i.LogoUrl,
 			&i.LogoPng,
 			&i.Accent,
+			&i.CardBg,
+			&i.CardText,
 		); err != nil {
 			return nil, err
 		}
@@ -161,7 +165,7 @@ func (q *Queries) ListOptOutsIn(ctx context.Context, ids []int64) ([]int64, erro
 }
 
 const listReposByOwner = `-- name: ListReposByOwner :many
-SELECT id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent FROM repos WHERE owner_user_id = $1 ORDER BY full_name
+SELECT id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent, card_bg, card_text FROM repos WHERE owner_user_id = $1 ORDER BY full_name
 `
 
 func (q *Queries) ListReposByOwner(ctx context.Context, ownerUserID uuid.NullUUID) ([]Repo, error) {
@@ -184,6 +188,8 @@ func (q *Queries) ListReposByOwner(ctx context.Context, ownerUserID uuid.NullUUI
 			&i.LogoUrl,
 			&i.LogoPng,
 			&i.Accent,
+			&i.CardBg,
+			&i.CardText,
 		); err != nil {
 			return nil, err
 		}
@@ -283,14 +289,16 @@ func (q *Queries) SetUserRememberMe(ctx context.Context, arg SetUserRememberMePa
 }
 
 const updateRepoBranding = `-- name: UpdateRepoBranding :one
-UPDATE repos SET logo_url = $2, logo_png = $3, accent = $4 WHERE id = $1 RETURNING id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent
+UPDATE repos SET logo_url = $2, logo_png = $3, accent = $4, card_bg = $5, card_text = $6 WHERE id = $1 RETURNING id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent, card_bg, card_text
 `
 
 type UpdateRepoBrandingParams struct {
-	ID      uuid.UUID `json:"id"`
-	LogoUrl string    `json:"logo_url"`
-	LogoPng []byte    `json:"logo_png"`
-	Accent  string    `json:"accent"`
+	ID       uuid.UUID `json:"id"`
+	LogoUrl  string    `json:"logo_url"`
+	LogoPng  []byte    `json:"logo_png"`
+	Accent   string    `json:"accent"`
+	CardBg   string    `json:"card_bg"`
+	CardText string    `json:"card_text"`
 }
 
 func (q *Queries) UpdateRepoBranding(ctx context.Context, arg UpdateRepoBrandingParams) (Repo, error) {
@@ -299,6 +307,8 @@ func (q *Queries) UpdateRepoBranding(ctx context.Context, arg UpdateRepoBranding
 		arg.LogoUrl,
 		arg.LogoPng,
 		arg.Accent,
+		arg.CardBg,
+		arg.CardText,
 	)
 	var i Repo
 	err := row.Scan(
@@ -312,12 +322,14 @@ func (q *Queries) UpdateRepoBranding(ctx context.Context, arg UpdateRepoBranding
 		&i.LogoUrl,
 		&i.LogoPng,
 		&i.Accent,
+		&i.CardBg,
+		&i.CardText,
 	)
 	return i, err
 }
 
 const updateRepoFlags = `-- name: UpdateRepoFlags :one
-UPDATE repos SET enabled = $2, allow_prerelease = $3 WHERE id = $1 RETURNING id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent
+UPDATE repos SET enabled = $2, allow_prerelease = $3 WHERE id = $1 RETURNING id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent, card_bg, card_text
 `
 
 type UpdateRepoFlagsParams struct {
@@ -340,6 +352,8 @@ func (q *Queries) UpdateRepoFlags(ctx context.Context, arg UpdateRepoFlagsParams
 		&i.LogoUrl,
 		&i.LogoPng,
 		&i.Accent,
+		&i.CardBg,
+		&i.CardText,
 	)
 	return i, err
 }
@@ -369,7 +383,7 @@ INSERT INTO repos (installation_id, owner_user_id, full_name, github_repo_id)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (installation_id, full_name) DO UPDATE
 SET github_repo_id = EXCLUDED.github_repo_id
-RETURNING id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent
+RETURNING id, installation_id, owner_user_id, full_name, enabled, allow_prerelease, github_repo_id, logo_url, logo_png, accent, card_bg, card_text
 `
 
 type UpsertRepoParams struct {
@@ -398,6 +412,8 @@ func (q *Queries) UpsertRepo(ctx context.Context, arg UpsertRepoParams) (Repo, e
 		&i.LogoUrl,
 		&i.LogoPng,
 		&i.Accent,
+		&i.CardBg,
+		&i.CardText,
 	)
 	return i, err
 }

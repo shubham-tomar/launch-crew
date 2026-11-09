@@ -12,11 +12,12 @@ import (
 // LogoSide is the size a captain's logo is stored at: twice the stub tile.
 const LogoSide = 208
 
-// RepoBrand is a repo's card branding: the captain's stored logo and accent,
-// with the GitHub owner's avatar standing in for a missing logo.
-func RepoBrand(fullName string, logoPNG []byte, accent string) Brand {
+// RepoBrand is a repo's card branding: the captain's stored logo, accent,
+// background and text colours, with the GitHub owner's avatar standing in for
+// a missing logo.
+func RepoBrand(fullName string, logoPNG []byte, accent, background, text string) Brand {
 	owner, _, _ := strings.Cut(fullName, "/")
-	b := Brand{Owner: owner, Accent: accent}
+	b := Brand{Owner: owner, Accent: accent, Background: background, Text: text}
 	if len(logoPNG) > 0 {
 		if img, _, err := image.Decode(bytes.NewReader(logoPNG)); err == nil {
 			b.Logo = img

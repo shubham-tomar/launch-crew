@@ -5,9 +5,16 @@ import Icon from '../components/Icon'
 import { asError } from './format'
 
 // Accents that read on the ink card (at least 4.5:1), in DESIGN.md's palette.
-const SWATCHES = ['#ADA9FF', '#58D3AE', '#D9A520', '#EC8669', '#7FB2FF']
+const ACCENTS = ['#ADA9FF', '#58D3AE', '#D9A520', '#EC8669', '#7FB2FF']
+// Card fields: ink (the default), paper, indigo, cobalt and forest.
+const BACKGROUNDS = ['#15181F', '#F4EFE6', '#4A45D1', '#1C56AD', '#2B643B']
+const TEXTS = ['#FFFFFF', '#16161A', '#E8EBF2', '#4A45D1']
 const DEFAULT_ACCENT = '#ADA9FF'
+const DEFAULT_BG = '#15181F'
+const DEFAULT_TEXT = '#FFFFFF'
 const HEX = /^#[0-9a-f]{6}$/i
+const okHex = (s: string) => s === '' || HEX.test(s)
+const same = (a: string, b: string) => a.trim().toUpperCase() === b.toUpperCase()
 
 const owner = (fullName: string) => fullName.split('/')[0] ?? ''
 const PREVIEW_DELAY = 600
@@ -21,17 +28,18 @@ const httpsUrl = (s: string) => {
 }
 
 type Preview = { png?: string; error?: string; loading: boolean }
+type Colours = { accent: string; background: string; text: string }
 
-// Redraws the sample card a moment after the logo or accent stops changing, only while the fold is open.
-function useCardPreview(repoId: string, open: boolean, logo: string, accent: string): Preview {
+// Redraws the sample card a moment after the branding stops changing, only while the fold is open.
+function useCardPreview(repoId: string, open: boolean, logo: string, { accent, background, text }: Colours): Preview {
   const [state, setState] = useState<Preview>({ loading: false })
-  const ready = (logo === '' || httpsUrl(logo)) && (accent === '' || HEX.test(accent))
+  const ready = (logo === '' || httpsUrl(logo)) && okHex(accent) && okHex(background) && okHex(text)
   useEffect(() => {
     if (!open || !ready) return
     let live = true
     const t = window.setTimeout(() => {
       setState((s) => ({ ...s, loading: true, error: undefined }))
-      previewRepoCard(repoId, { logoUrl: logo, accent })
+      previewRepoCard(repoId, { logoUrl: logo, accent, background, text })
         .then((r) => live && setState({ png: r.png, loading: false }))
         .catch((e) => live && setState((s) => ({ ...s, loading: false, error: asError(e).message })))
     }, PREVIEW_DELAY)
@@ -39,23 +47,70 @@ function useCardPreview(repoId: string, open: boolean, logo: string, accent: str
       live = false
       window.clearTimeout(t)
     }
-  }, [repoId, open, ready, logo, accent])
+  }, [repoId, open, ready, logo, accent, background, text])
   return state
 }
 
-/** The repo's card branding: a logo (the owner's GitHub avatar when empty) and an accent. */
+type ColourProps = {
+  legend: string
+  swatches: string[]
+  fallback: string
+  value: string
+  onChange: (v: string) => void
+  hint: string
+}
+
+/** One card colour: swatches plus a hex field; empty means the default. */
+function ColourField({ legend, swatches, fallback, value, onChange, hint }: ColourProps) {
+  const shown = HEX.test(value) ? value : fallback
+  const bad = !okHex(value.trim())
+  return (
+    <fieldset className="rp-brand-field">
+      <legend>{legend}</legend>
+      <div className="rp-swatches">
+        {swatches.map((c) => (
+          <button
+            key={c}
+            type="button"
+            className="rp-swatch"
+            style={{ backgroundColor: c }}
+            aria-label={`Use ${c} for ${legend.toLowerCase()}`}
+            aria-pressed={shown.toUpperCase() === c}
+            onClick={() => onChange(c)}
+          />
+        ))}
+        <input
+          className="field rp-hex"
+          aria-label={`${legend} hex colour`}
+          placeholder={fallback}
+          maxLength={7}
+          value={value}
+          aria-invalid={bad || undefined}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </div>
+      <span className="rp-brand-hint">{hint}</span>
+    </fieldset>
+  )
+}
+
+/** The repo's card branding: a logo (the owner's GitHub avatar when empty), accent, background and text colours. */
 export default function CardBrand({ repo, onSaved }: { repo: Repo; onSaved: (r: Repo) => void }) {
   const [logo, setLogo] = useState(repo.logoUrl)
   const [accent, setAccent] = useState(repo.accent)
+  const [background, setBackground] = useState(repo.background)
+  const [text, setText] = useState(repo.text)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [open, setOpen] = useState(false)
-  const card = useCardPreview(repo.id, open, logo.trim(), accent.trim())
+  const colours = { accent: accent.trim(), background: background.trim(), text: text.trim() }
+  const card = useCardPreview(repo.id, open, logo.trim(), colours)
 
   const shown = HEX.test(accent) ? accent : DEFAULT_ACCENT
-  const dirty = logo.trim() !== repo.logoUrl || accent.trim().toUpperCase() !== repo.accent.toUpperCase()
-  const badHex = accent.trim() !== '' && !HEX.test(accent.trim())
+  const dirty =
+    logo.trim() !== repo.logoUrl || !same(accent, repo.accent) || !same(background, repo.background) || !same(text, repo.text)
+  const badHex = !okHex(colours.accent) || !okHex(colours.background) || !okHex(colours.text)
   const id = `cb-${repo.id}`
   const preview = logo.trim() || `https://github.com/${encodeURIComponent(owner(repo.fullName))}.png?size=88`
 
@@ -66,9 +121,11 @@ export default function CardBrand({ repo, onSaved }: { repo: Repo; onSaved: (r: 
     setError('')
     setSaved(false)
     try {
-      const next = await patchRepo(repo.id, { logoUrl: logo.trim(), accent: accent.trim() })
+      const next = await patchRepo(repo.id, { logoUrl: logo.trim(), ...colours })
       setLogo(next.logoUrl)
       setAccent(next.accent)
+      setBackground(next.background)
+      setText(next.text)
       setSaved(true)
       onSaved(next)
     } catch (err) {
@@ -104,32 +161,30 @@ export default function CardBrand({ repo, onSaved }: { repo: Repo; onSaved: (r: 
             Square works best. Leave empty to use {owner(repo.fullName)}'s GitHub avatar.
           </span>
         </div>
-        <fieldset className="rp-brand-field">
-          <legend>Accent</legend>
-          <div className="rp-swatches">
-            {SWATCHES.map((c) => (
-              <button
-                key={c}
-                type="button"
-                className="rp-swatch"
-                style={{ backgroundColor: c }}
-                aria-label={`Use ${c}`}
-                aria-pressed={shown.toUpperCase() === c}
-                onClick={() => setAccent(c)}
-              />
-            ))}
-            <input
-              className="field rp-hex"
-              aria-label="Accent hex colour"
-              placeholder={DEFAULT_ACCENT}
-              maxLength={7}
-              value={accent}
-              aria-invalid={badHex || undefined}
-              onChange={(e) => setAccent(e.target.value)}
-            />
-          </div>
-          <span className="rp-brand-hint">Dark colours are refused: the card is ink, so the accent has to read on it.</span>
-        </fieldset>
+        <ColourField
+          legend="Background"
+          swatches={BACKGROUNDS}
+          fallback={DEFAULT_BG}
+          value={background}
+          onChange={setBackground}
+          hint="The card's fill. Leave empty for the ink card."
+        />
+        <ColourField
+          legend="Text"
+          swatches={TEXTS}
+          fallback={DEFAULT_TEXT}
+          value={text}
+          onChange={setText}
+          hint="Leave empty to pick white or ink, whichever reads on the background."
+        />
+        <ColourField
+          legend="Accent"
+          swatches={ACCENTS}
+          fallback={DEFAULT_ACCENT}
+          value={accent}
+          onChange={setAccent}
+          hint="Used for the avatar ring and highlights. Text and accent have to read on the background."
+        />
         <figure className="rp-preview" aria-busy={card.loading || undefined}>
           {card.png ? (
             <img src={card.png} alt={`Sample card for ${repo.fullName} with this branding`} className={card.loading ? 'rp-preview-stale' : undefined} />

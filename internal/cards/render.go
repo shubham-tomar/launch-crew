@@ -45,6 +45,9 @@ var HTTPClient = &http.Client{Timeout: 3 * time.Second}
 const (
 	addedHex   = "#58D3AE"
 	deletedHex = "#FF8A74"
+	// The diff colours for a light card field, where the bright pair washes out.
+	addedDarkHex   = "#0A6B4E"
+	deletedDarkHex = "#B3261E"
 )
 
 // PRLine is one change listed on a card.
@@ -56,10 +59,49 @@ type PRLine struct {
 // Brand is the repo's look on the stub. Logo (a captain-set image) wins, then
 // LogoURL (the GitHub owner's avatar), then initials on an accent tile.
 // Accent is a hex colour; one too dark to read on the field falls back to the
-// preset's mark colour.
+// preset's mark colour. Background and Text replace the preset's field and
+// type colours (see Apply).
 type Brand struct {
 	Owner, LogoURL, Accent string
+	Background, Text       string
 	Logo                   image.Image
+}
+
+// Apply returns p with the brand's background and text colours. A background
+// without a text colour gets white or ink, whichever reads better; a text
+// colour under 4.5:1 on the field is ignored. When either is set the preset's
+// tinted eyebrow and muted colours are dropped, so they derive from the new
+// type over the new field.
+func (b Brand) Apply(p Preset) Preset {
+	bg, text := strings.ToUpper(b.Background), strings.ToUpper(b.Text)
+	if !ValidAccent(bg) && !ValidAccent(text) {
+		return p
+	}
+	if ValidAccent(bg) {
+		p.Field = bg
+		p.Type = AutoText(bg)
+	}
+	if ValidAccent(text) && Contrast(text, p.Field) >= 4.5 {
+		p.Type = text
+	}
+	p.Mark, p.Eyebrow, p.Muted = p.Type, "", ""
+	return p
+}
+
+// readable is c when it reads on field at 4.5:1, else fallback.
+func readable(c, fallback, field string) string {
+	if Contrast(c, field) >= 4.5 {
+		return c
+	}
+	return fallback
+}
+
+// AutoText is white or ink, whichever has more contrast on bg.
+func AutoText(bg string) string {
+	if Contrast(white, bg) >= Contrast(darkType, bg) {
+		return white
+	}
+	return darkType
 }
 
 // ContributorCard is the card for one contributor in a release: who they are
@@ -180,6 +222,7 @@ func Render(c any, p Preset) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("cards: unsupported card type %T", c)
 	}
+	p = brand.Apply(p)
 	pl := paletteOf(p, brand.Accent)
 
 	dc := gg.NewContext(cardW, cardH)
@@ -288,8 +331,8 @@ func drawPerson(dc *gg.Context, fs fontSet, pl palette, v ContributorCard, o per
 		put(mf, pl.muted(), o.count)
 	}
 	if v.Added+v.Deleted > 0 {
-		put(monof, addedHex, "+"+strconv.Itoa(v.Added))
-		put(monof, deletedHex, minus(fs.mono)+strconv.Itoa(v.Deleted))
+		put(monof, readable(addedHex, addedDarkHex, pl.Field), "+"+strconv.Itoa(v.Added))
+		put(monof, readable(deletedHex, deletedDarkHex, pl.Field), minus(fs.mono)+strconv.Itoa(v.Deleted))
 	}
 
 	// Middle: what shipped in the release.

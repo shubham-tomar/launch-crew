@@ -212,6 +212,8 @@ type Repo struct {
 	LogoUrl         string        `json:"logo_url"`
 	LogoPng         []byte        `json:"logo_png"`
 	Accent          string        `json:"accent"`
+	CardBg          string        `json:"card_bg"`
+	CardText        string        `json:"card_text"`
 }
 
 type User struct {

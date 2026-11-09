@@ -376,12 +376,33 @@ func TestRepoBrandingReachesTheContributorCard(t *testing.T) {
 		t.Fatalf("preview saved the accent: %s", row.Accent)
 	}
 
+	// Background and text colours are stored upper-cased beside the accent;
+	// text or an accent that cannot read on the background is refused.
+	coloured, err := launch.UpdateRepo(e.ctx, e.deps, e.owner.ID, e.repo.ID, launch.RepoPatch{
+		Background: str("#f4efe6"), Text: str("#4a45d1"), Accent: str("#B3326B"),
+	})
+	if err != nil || coloured.Background != "#F4EFE6" || coloured.Text != "#4A45D1" || coloured.Accent != "#B3326B" {
+		t.Fatalf("colours: %+v %v", coloured, err)
+	}
+	for _, p := range []launch.RepoPatch{
+		{Text: str("#FFFFFF")},
+		{Accent: str("#ADA9FF")},
+		{Background: str("blue")},
+	} {
+		if _, err := launch.UpdateRepo(e.ctx, e.deps, e.owner.ID, e.repo.ID, p); !errors.Is(err, launch.ErrInvalid) {
+			t.Fatalf("%+v: %v", p, err)
+		}
+	}
+	if _, err := launch.UpdateRepo(e.ctx, e.deps, e.owner.ID, e.repo.ID, launch.RepoPatch{Background: str(""), Text: str(""), Accent: str("#58D3AE")}); err != nil {
+		t.Fatal(err)
+	}
+
 	// Clearing the logo falls back to the owner's GitHub avatar.
 	if _, err := launch.UpdateRepo(e.ctx, e.deps, e.owner.ID, e.repo.ID, launch.RepoPatch{LogoURL: str("")}); err != nil {
 		t.Fatal(err)
 	}
 	row, _ = e.q.GetRepo(e.ctx, e.repo.ID)
-	b := cards.RepoBrand(row.FullName, row.LogoPng, row.Accent)
+	b := cards.RepoBrand(row.FullName, row.LogoPng, row.Accent, row.CardBg, row.CardText)
 	if b.Logo != nil || b.LogoURL != "https://github.com/acme.png?size=208" {
 		t.Fatalf("fallback brand %+v", b)
 	}

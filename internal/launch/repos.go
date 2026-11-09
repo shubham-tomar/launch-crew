@@ -20,22 +20,31 @@ type Repo struct {
 	Enabled         bool      `json:"enabled"`
 	AllowPrerelease bool      `json:"allowPrerelease"`
 	// Card branding: the captain's logo URL (empty: the owner's GitHub
-	// avatar) and accent colour (empty: the default).
-	LogoURL string `json:"logoUrl"`
-	Accent  string `json:"accent"`
+	// avatar), accent, background and text colours (empty: the defaults).
+	LogoURL    string `json:"logoUrl"`
+	Accent     string `json:"accent"`
+	Background string `json:"background"`
+	Text       string `json:"text"`
 }
 
 // RepoPatch changes a repo's flags; nil fields are left alone.
 type RepoPatch struct {
 	Enabled         *bool `json:"enabled"`
 	AllowPrerelease *bool `json:"allowPrerelease"`
-	// LogoURL and Accent set the card branding; "" clears either.
-	LogoURL *string `json:"logoUrl"`
-	Accent  *string `json:"accent"`
+	// LogoURL, Accent, Background and Text set the card branding; "" clears one.
+	LogoURL    *string `json:"logoUrl"`
+	Accent     *string `json:"accent"`
+	Background *string `json:"background"`
+	Text       *string `json:"text"`
+}
+
+// brandingPatch reports whether p touches the card branding.
+func (p RepoPatch) brandingPatch() bool {
+	return p.LogoURL != nil || p.Accent != nil || p.Background != nil || p.Text != nil
 }
 
 func repoOf(r sqlc.Repo) Repo {
-	return Repo{ID: r.ID, FullName: r.FullName, Enabled: r.Enabled, AllowPrerelease: r.AllowPrerelease, LogoURL: r.LogoUrl, Accent: r.Accent}
+	return Repo{ID: r.ID, FullName: r.FullName, Enabled: r.Enabled, AllowPrerelease: r.AllowPrerelease, LogoURL: r.LogoUrl, Accent: r.Accent, Background: r.CardBg, Text: r.CardText}
 }
 
 // Repos lists the captain's repos by name.
@@ -57,7 +66,7 @@ func UpdateRepo(ctx context.Context, d Deps, userID, repoID uuid.UUID, p RepoPat
 	if err != nil {
 		return Repo{}, err
 	}
-	if p.LogoURL != nil || p.Accent != nil {
+	if p.brandingPatch() {
 		if r, err = updateBranding(ctx, d, r, p); err != nil {
 			return Repo{}, err
 		}
@@ -91,52 +100,83 @@ func ownRepo(ctx context.Context, d Deps, userID, repoID uuid.UUID) (sqlc.Repo, 
 	return r, nil
 }
 
-// branding resolves a patch against the stored row: the accent checked and
-// upper-cased, the logo fetched through the QR logo guard and shrunk. An
-// unchanged logo URL reuses the stored image instead of fetching it again.
-func branding(ctx context.Context, d Deps, r sqlc.Repo, p RepoPatch) (logoURL string, logoPNG []byte, accent string, err error) {
-	logoURL, logoPNG, accent = r.LogoUrl, r.LogoPng, r.Accent
-	if p.Accent != nil {
-		a := strings.ToUpper(strings.TrimSpace(*p.Accent))
-		switch {
-		case a == "":
-		case !cards.ValidAccent(a):
-			return "", nil, "", invalid("use a hex colour like #58D3AE for the accent")
-		case cards.Contrast(a, cards.PresetFor(uuid.Nil).Field) < 4.5:
-			return "", nil, "", invalid("that accent is too dark to read on the card; pick a lighter one")
+// cardBranding is a repo's resolved card branding.
+type cardBranding struct {
+	logoURL                  string
+	logoPNG                  []byte
+	accent, background, text string
+}
+
+// hexField checks and upper-cases one colour of a patch; nil keeps cur.
+func hexField(v *string, cur, what string) (string, error) {
+	if v == nil {
+		return cur, nil
+	}
+	h := strings.ToUpper(strings.TrimSpace(*v))
+	if h != "" && !cards.ValidAccent(h) {
+		return "", invalid("use a hex colour like #58D3AE for the %s", what)
+	}
+	return h, nil
+}
+
+// branding resolves a patch against the stored row: colours checked and
+// upper-cased, the logo fetched through the QR logo guard and shrunk. The
+// text and accent must read on the chosen background. An unchanged logo URL
+// reuses the stored image instead of fetching it again.
+func branding(ctx context.Context, d Deps, r sqlc.Repo, p RepoPatch) (cardBranding, error) {
+	b := cardBranding{logoURL: r.LogoUrl, logoPNG: r.LogoPng}
+	var err error
+	if b.accent, err = hexField(p.Accent, r.Accent, "accent"); err != nil {
+		return cardBranding{}, err
+	}
+	if b.background, err = hexField(p.Background, r.CardBg, "background"); err != nil {
+		return cardBranding{}, err
+	}
+	if b.text, err = hexField(p.Text, r.CardText, "text colour"); err != nil {
+		return cardBranding{}, err
+	}
+	field := cards.Brand{Background: b.background}.Apply(cards.PresetFor(uuid.Nil)).Field
+	if b.text != "" && cards.Contrast(b.text, field) < 4.5 {
+		return cardBranding{}, invalid("that text colour is hard to read on the background; pick one with more contrast")
+	}
+	if b.accent != "" && cards.Contrast(b.accent, field) < 4.5 {
+		if b.background == "" {
+			return cardBranding{}, invalid("that accent is too dark to read on the card; pick a lighter one")
 		}
-		accent = a
+		return cardBranding{}, invalid("that accent is hard to read on the background; pick one with more contrast")
 	}
 	if p.LogoURL != nil {
 		raw := strings.TrimSpace(*p.LogoURL)
 		if raw == r.LogoUrl && raw != "" && len(r.LogoPng) > 0 {
-			return raw, r.LogoPng, accent, nil
+			return b, nil
 		}
-		logoURL, logoPNG = raw, nil
+		b.logoURL, b.logoPNG = raw, nil
 		if raw != "" {
 			if err := validateLogo(qrCustom, raw, d.AllowLoopback); err != nil {
-				return "", nil, "", invalid("use an https:// image URL for the repo logo")
+				return cardBranding{}, invalid("use an https:// image URL for the repo logo")
 			}
-			b, err := fetchLogo(ctx, raw, d.AllowLoopback)
+			img, err := fetchLogo(ctx, raw, d.AllowLoopback)
 			if err != nil {
-				return "", nil, "", err
+				return cardBranding{}, err
 			}
-			if logoPNG, err = cards.ShrinkLogo(b); err != nil {
-				return "", nil, "", fmt.Errorf("%w: %v", ErrLogoNotImage, err)
+			if b.logoPNG, err = cards.ShrinkLogo(img); err != nil {
+				return cardBranding{}, fmt.Errorf("%w: %v", ErrLogoNotImage, err)
 			}
 		}
 	}
-	return logoURL, logoPNG, accent, nil
+	return b, nil
 }
 
-// updateBranding stores a repo's card logo and accent. The logo is kept shrunk
-// in the row, so rendering a card never fetches a captain's URL.
+// updateBranding stores a repo's card branding. The logo is kept shrunk in
+// the row, so rendering a card never fetches a captain's URL.
 func updateBranding(ctx context.Context, d Deps, r sqlc.Repo, p RepoPatch) (sqlc.Repo, error) {
-	logoURL, logoPNG, accent, err := branding(ctx, d, r, p)
+	b, err := branding(ctx, d, r, p)
 	if err != nil {
 		return r, err
 	}
-	out, err := d.Q.UpdateRepoBranding(ctx, sqlc.UpdateRepoBrandingParams{ID: r.ID, LogoUrl: logoURL, LogoPng: logoPNG, Accent: accent})
+	out, err := d.Q.UpdateRepoBranding(ctx, sqlc.UpdateRepoBrandingParams{
+		ID: r.ID, LogoUrl: b.logoURL, LogoPng: b.logoPNG, Accent: b.accent, CardBg: b.background, CardText: b.text,
+	})
 	if err != nil {
 		return r, fmt.Errorf("launch: update repo branding: %w", err)
 	}
@@ -160,7 +200,7 @@ func RepoCardPreview(ctx context.Context, d Deps, userID, repoID uuid.UUID, p Re
 	if err != nil {
 		return nil, err
 	}
-	_, logoPNG, accent, err := branding(ctx, d, r, p)
+	b, err := branding(ctx, d, r, p)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +208,7 @@ func RepoCardPreview(ctx context.Context, d Deps, userID, repoID uuid.UUID, p Re
 	c := cards.ContributorCard{
 		Name: "Your contributor", Handle: "contributor", Project: name, Version: "v1.0.0",
 		PRCount: 3, Added: 412, Deleted: 96, Release: sampleRelease, ReleaseMore: 9, CrewCount: 9,
-		Date: d.now(), Brand: cards.RepoBrand(r.FullName, logoPNG, accent),
+		Date: d.now(), Brand: cards.RepoBrand(r.FullName, b.logoPNG, b.accent, b.background, b.text),
 	}
 	if gi, err := d.Q.GetGitHubIdentityByUser(ctx, userID); err == nil {
 		c.Name, c.Handle = gi.Login, gi.Login

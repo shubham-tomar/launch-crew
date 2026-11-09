@@ -289,10 +289,26 @@ export type Patch = {
   tickedCrew?: string[]
 }
 
-/** logoUrl and accent brand the repo's cards; empty means the owner's GitHub avatar and the default accent. */
-export type Repo = { id: string; fullName: string; enabled: boolean; allowPrerelease: boolean; logoUrl: string; accent: string }
+/** logoUrl and the colours brand the repo's cards; empty means the owner's GitHub avatar and the default ink card. */
+export type Repo = {
+  id: string
+  fullName: string
+  enabled: boolean
+  allowPrerelease: boolean
+  logoUrl: string
+  accent: string
+  background: string
+  text: string
+}
 
-export type RepoPatch = { enabled?: boolean; allowPrerelease?: boolean; logoUrl?: string; accent?: string }
+export type RepoPatch = {
+  enabled?: boolean
+  allowPrerelease?: boolean
+  logoUrl?: string
+  accent?: string
+  background?: string
+  text?: string
+}
 
 const json = (method: string, body?: unknown): RequestInit => ({
   method,
@@ -353,7 +369,7 @@ export const bufferChannelUrl = (channelId: string, status: string) => {
   return `https://publish.buffer.com/channels/${encodeURIComponent(channelId)}/${tab}`
 }
 /** Draws a sample card with unsaved branding; png is a data URL. */
-export const previewRepoCard = (id: string, p: { logoUrl: string; accent: string }) =>
+export const previewRepoCard = (id: string, p: { logoUrl: string; accent: string; background: string; text: string }) =>
   captain<{ png: string }>(`/repos/${lid(id)}/card-preview`, json('POST', p))
 export const patchRepo = (id: string, p: RepoPatch) =>
   captain<Repo>(`/repos/${lid(id)}`, json('PATCH', p))

@@ -198,7 +198,7 @@ func (s *state) brand() cards.Brand {
 	if s.repo == nil {
 		return cards.Brand{}
 	}
-	return cards.RepoBrand(s.repo.FullName, s.repo.LogoPng, s.repo.Accent)
+	return cards.RepoBrand(s.repo.FullName, s.repo.LogoPng, s.repo.Accent, s.repo.CardBg, s.repo.CardText)
 }
 
 // isCaptain reports a crew row that is the captain themselves.

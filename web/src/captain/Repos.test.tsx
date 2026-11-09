@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router'
 import type { Repo } from '../api'
 import Repos from './Repos'
 
-const repo = (over: Partial<Repo> = {}): Repo => ({ id: 'r1', fullName: 'acme/rocket', enabled: true, allowPrerelease: false, logoUrl: '', accent: '', ...over })
+const repo = (over: Partial<Repo> = {}): Repo => ({ id: 'r1', fullName: 'acme/rocket', enabled: true, allowPrerelease: false, logoUrl: '', accent: '', background: '', text: '', ...over })
 
 function setup(list: Repo[]) {
   const calls: { method: string; url: string; body?: unknown }[] = []
@@ -107,7 +107,7 @@ describe('card branding', () => {
     const form = screen.getByRole('form', { name: 'Card branding for acme/rocket' })
     expect(within(form).getByText(/acme's GitHub avatar/)).toBeInTheDocument()
     await userEvent.type(within(form).getByLabelText('Logo URL'), 'https://acme.dev/logo.png')
-    await userEvent.click(within(form).getByRole('button', { name: 'Use #58D3AE' }))
+    await userEvent.click(within(form).getByRole('button', { name: 'Use #58D3AE for accent' }))
     await userEvent.click(within(form).getByRole('button', { name: 'Save branding' }))
     expect(await within(form).findByText(/New cards use it/)).toBeInTheDocument()
     expect(calls.at(-1)).toMatchObject({ method: 'PATCH', url: '/api/captain/repos/r1', body: { logoUrl: 'https://acme.dev/logo.png', accent: '#58D3AE' } })
@@ -121,6 +121,17 @@ describe('card branding', () => {
     expect(screen.getByRole('button', { name: 'Save branding' })).toBeDisabled()
     expect(calls.some((c) => c.method === 'PATCH')).toBe(false)
   })
+
+  it('saves a background and text colour beside the accent', async () => {
+    const calls = setup([repo()])
+    await userEvent.click(await screen.findByText('Card branding'))
+    const form = screen.getByRole('form', { name: 'Card branding for acme/rocket' })
+    await userEvent.click(within(form).getByRole('button', { name: 'Use #F4EFE6 for background' }))
+    await userEvent.type(within(form).getByLabelText('Text hex colour'), '#4A45D1')
+    await userEvent.click(within(form).getByRole('button', { name: 'Save branding' }))
+    expect(await within(form).findByText(/New cards use it/)).toBeInTheDocument()
+    expect(calls.at(-1)).toMatchObject({ method: 'PATCH', body: { background: '#F4EFE6', text: '#4A45D1', accent: '' } })
+  })
 })
 
 test('the branding fold draws a preview once open, and again when the accent changes', async () => {
@@ -131,7 +142,7 @@ test('the branding fold draws a preview once open, and again when the accent cha
   await userEvent.click(screen.getByText('Card branding'))
   const img = await screen.findByRole('img', { name: 'Sample card for acme/rocket with this branding' }, { timeout: 2000 })
   expect(img).toHaveAttribute('src', 'data:image/png;base64,AAAA')
-  expect(previews()[0]).toMatchObject({ method: 'POST', url: '/api/captain/repos/r1/card-preview', body: { logoUrl: '', accent: '' } })
-  await userEvent.click(screen.getByRole('button', { name: 'Use #D9A520' }))
-  await waitFor(() => expect(previews().at(-1)?.body).toEqual({ logoUrl: '', accent: '#D9A520' }), { timeout: 2000 })
+  expect(previews()[0]).toMatchObject({ method: 'POST', url: '/api/captain/repos/r1/card-preview', body: { logoUrl: '', accent: '', background: '', text: '' } })
+  await userEvent.click(screen.getByRole('button', { name: 'Use #D9A520 for accent' }))
+  await waitFor(() => expect(previews().at(-1)?.body).toEqual({ logoUrl: '', accent: '#D9A520', background: '', text: '' }), { timeout: 2000 })
 })
