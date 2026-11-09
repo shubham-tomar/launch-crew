@@ -99,13 +99,15 @@ const PREFLIGHT = [
   'Buffer rate headroom',
 ]
 
-// The page unfolds like a paper pass. Each part hangs from the crease at the
-// bottom of the part above: it starts tucked up behind that part and swings
-// down from its top edge as it scrolls up the screen, flat by OPEN_AT. The
+// The page unfolds like a paper pass, accordion style. Each part hangs from the
+// crease at the bottom of the part above and swings down from its top edge as
+// it scrolls up the screen, flat by OPEN_AT. Parts alternate: one comes from
+// behind the part above, the next folds down over its front, from the top. The
 // angle follows scroll position, eased toward it each frame so it glides
 // rather than jumps; scrolling back folds it away again. Skipped for reduced
 // motion, so the page is always flat and readable.
-const FOLD_MAX = 118 // degrees: past 90, so a folded part sits behind the one above
+const FOLD_BEHIND = 118 // degrees: past 90, so a folded part sits behind the one above
+const FOLD_OVER = 100 // degrees: past 90, so a folded part lies over the one above
 const START_AT = 1 // starts opening as its crease enters the bottom of the viewport
 const OPEN_AT = 0.32 // flat once its crease is this far down the viewport
 const EASE = 0.12 // share of the remaining distance covered each frame
@@ -132,8 +134,9 @@ function useFold() {
       })
     }
 
-    const paint = (el: HTMLElement, open: number) => {
-      const deg = -FOLD_MAX * (1 - open)
+    const over = (i: number) => i % 2 === 1
+    const paint = (el: HTMLElement, open: number, i: number) => {
+      const deg = (over(i) ? FOLD_OVER : -FOLD_BEHIND) * (1 - open)
       el.style.setProperty('--fold', `${deg.toFixed(2)}deg`)
       el.style.setProperty('--shade', `${(0.55 * Math.min(1, (1 - open) * 1.6)).toFixed(3)}`)
       el.classList.toggle('is-in', open === 1)
@@ -149,7 +152,7 @@ function useFold() {
         if (Math.abs(want[i] - next) < 0.002) next = want[i]
         else moving = true
         shown[i] = next
-        paint(el, next)
+        paint(el, next, i)
       })
       if (moving) frame = requestAnimationFrame(tick)
     }
@@ -159,7 +162,9 @@ function useFold() {
 
     root.classList.add('home-fold')
     parts.forEach((el, i) => {
-      el.style.zIndex = String(parts.length - i) // a folded part tucks behind the one above
+      // Behind the part above, or over it.
+      el.style.zIndex = String(over(i) ? 100 + i : parts.length - i)
+      el.classList.toggle('home-fold-over', over(i))
     })
     tick()
     window.addEventListener('scroll', queue, { passive: true })
@@ -173,7 +178,7 @@ function useFold() {
         el.style.removeProperty('--fold')
         el.style.removeProperty('--shade')
         el.style.removeProperty('z-index')
-        el.classList.remove('is-in')
+        el.classList.remove('is-in', 'home-fold-over')
       }
     }
   }, [])

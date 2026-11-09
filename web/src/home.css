@@ -671,8 +671,8 @@
 
 /* Paper fold. home-fold is added by script only when motion is fine; the script
    sets --fold (degrees) and --shade (0 to 1) from scroll position. Each part hangs
-   from the crease at its top edge and swings down from behind the part above,
-   so the far (bottom) edge, with its tear line, is darkest while it opens. The
+   from the crease at its top edge and swings down, alternately from behind the
+   part above (far edge darkest) and over its front (crease darkest). The
    hero sits above every part, so a tucked part stays hidden behind it. */
 .home-fold {
   overflow: visible;
@@ -708,6 +708,11 @@
   pointer-events: none;
   background-image: linear-gradient(to bottom, rgb(0 0 0 / calc(var(--shade, 0) * 0.25)), rgb(0 0 0 / var(--shade, 0)));
   border-radius: inherit;
+}
+
+/* Folding down over the front, the crease is the shadowed edge. */
+.home-fold > .home-fold-over::after {
+  background-image: linear-gradient(to bottom, rgb(0 0 0 / var(--shade, 0)), rgb(0 0 0 / calc(var(--shade, 0) * 0.25)));
 }
 
 @media (width < 48rem) {
