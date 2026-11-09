@@ -274,7 +274,7 @@ func TestMissingAvatarUsesPlaceholder(t *testing.T) {
 		}
 		return decodePNG(t, b).At(avatarCx, avatarCy)
 	}
-	pl := paletteOf(goldenPreset, "")
+	pl := paletteOf(goldenPreset, "", false)
 	want := hexColor(blend(pl.accent, pl.Field, 0.22)) // the accent's quiet tint
 	near := func(a, b color.Color) bool {
 		ar, ag, ab, _ := a.RGBA()
@@ -335,16 +335,16 @@ func TestTicketIsTransparentOutsideItsShape(t *testing.T) {
 }
 
 func TestAccentTooDarkFallsBack(t *testing.T) {
-	if got := paletteOf(goldenPreset, "#101010").accent; got != goldenPreset.Eyebrow {
+	if got := paletteOf(goldenPreset, "#101010", false).accent; got != goldenPreset.Eyebrow {
 		t.Errorf("dark accent kept: %s", got)
 	}
-	if got := paletteOf(goldenPreset, "#58d3ae").accent; got != "#58D3AE" {
+	if got := paletteOf(goldenPreset, "#58d3ae", false).accent; got != "#58D3AE" {
 		t.Errorf("readable accent = %s", got)
 	}
-	if got := paletteOf(goldenPreset, "red").accent; got != goldenPreset.Eyebrow {
+	if got := paletteOf(goldenPreset, "red", false).accent; got != goldenPreset.Eyebrow {
 		t.Errorf("invalid accent kept: %s", got)
 	}
-	if Contrast(paletteOf(goldenPreset, "#58D3AE").accent, goldenPreset.Field) < 4.5 {
+	if Contrast(paletteOf(goldenPreset, "#58D3AE", false).accent, goldenPreset.Field) < 4.5 {
 		t.Error("accent under 4.5:1")
 	}
 }
@@ -371,8 +371,15 @@ func TestBrandColoursReplaceFieldAndType(t *testing.T) {
 	}
 	// The accent falls back to the new type when it cannot read on the new field.
 	p := Brand{Background: "#F4EFE6"}.Apply(goldenPreset)
-	if got := paletteOf(p, "#ADA9FF").accent; got != darkType {
+	if got := paletteOf(p, "#ADA9FF", false).accent; got != darkType {
 		t.Fatalf("pale accent on light field = %s", got)
+	}
+	// Exact (the captain's preview) keeps the pick, readable or not.
+	if got := paletteOf(p, "#ADA9FF", true).accent; got != "#ADA9FF" {
+		t.Fatalf("exact pale accent = %s", got)
+	}
+	if got := (Brand{Background: "#F4EFE6", Text: "#FFFFFF", Exact: true}).Apply(goldenPreset).Type; got != "#FFFFFF" {
+		t.Fatalf("exact white text on paper = %s", got)
 	}
 	// The card renders on the custom field.
 	png, err := Render(ContributorCard{Name: "Ada", Handle: "ada", Project: "rocket", Version: "v1.0.0",

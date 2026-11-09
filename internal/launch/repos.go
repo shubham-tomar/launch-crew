@@ -236,6 +236,7 @@ func RepoCardPreview(ctx context.Context, d Deps, userID, repoID uuid.UUID, p Re
 		PRCount: 3, Added: 412, Deleted: 96, Release: sampleRelease, ReleaseMore: 9, CrewCount: 9,
 		Date: d.now(), Brand: cards.RepoBrand(r.FullName, b.logoPNG, b.accent, b.background, b.text),
 	}
+	c.Brand.Exact = true
 	if gi, err := d.Q.GetGitHubIdentityByUser(ctx, userID); err == nil {
 		c.Name, c.Handle = gi.Login, gi.Login
 		c.AvatarURL = fmt.Sprintf("https://avatars.githubusercontent.com/u/%d?s=256", gi.GithubUserID)

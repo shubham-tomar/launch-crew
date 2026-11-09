@@ -371,7 +371,7 @@ func TestRepoBrandingReachesTheContributorCard(t *testing.T) {
 		t.Fatalf("bad accent %v, stranger %v", badErr, strangerErr)
 	}
 	pc, ok := e.rendered[0].(cards.ContributorCard)
-	if !ok || pc.Brand.Accent != "#D9A520" || pc.Brand.Logo == nil || pc.Project != "rocket" || len(pc.Release) == 0 || pc.Release[0].Title != "Faster boosters" {
+	if !ok || pc.Brand.Accent != "#D9A520" || !pc.Brand.Exact || pc.Brand.Logo == nil || pc.Project != "rocket" || len(pc.Release) == 0 || pc.Release[0].Title != "Faster boosters" {
 		t.Fatalf("preview card %+v", e.rendered[0])
 	}
 	if row, _ := e.q.GetRepo(e.ctx, e.repo.ID); row.Accent != "#58D3AE" {

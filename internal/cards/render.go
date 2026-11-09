@@ -60,11 +60,14 @@ type PRLine struct {
 // LogoURL (the GitHub owner's avatar), then initials on an accent tile.
 // Accent is a hex colour; one too dark to read on the field falls back to the
 // preset's mark colour. Background and Text replace the preset's field and
-// type colours (see Apply).
+// type colours (see Apply). Exact draws the text and accent as given, even
+// when they don't read on the field: the captain's preview shows their pick,
+// and saving is what checks contrast.
 type Brand struct {
 	Owner, LogoURL, Accent string
 	Background, Text       string
 	Logo                   image.Image
+	Exact                  bool
 }
 
 // Apply returns p with the brand's background and text colours. A background
@@ -81,7 +84,7 @@ func (b Brand) Apply(p Preset) Preset {
 		p.Field = bg
 		p.Type = AutoText(bg)
 	}
-	if ValidAccent(text) && Contrast(text, p.Field) >= 4.5 {
+	if ValidAccent(text) && (b.Exact || Contrast(text, p.Field) >= 4.5) {
 		p.Type = text
 	}
 	p.Mark, p.Eyebrow, p.Muted = p.Type, "", ""
@@ -166,12 +169,12 @@ type palette struct {
 	accent, line, dim, body string
 }
 
-func paletteOf(p Preset, accent string) palette {
+func paletteOf(p Preset, accent string, exact bool) palette {
 	a := p.Mark
 	if p.Eyebrow != "" {
 		a = p.Eyebrow
 	}
-	if ValidAccent(accent) && Contrast(accent, p.Field) >= 4.5 {
+	if ValidAccent(accent) && (exact || Contrast(accent, p.Field) >= 4.5) {
 		a = strings.ToUpper(accent)
 	}
 	return palette{Preset: p, accent: a,
@@ -223,7 +226,7 @@ func Render(c any, p Preset) ([]byte, error) {
 		return nil, fmt.Errorf("cards: unsupported card type %T", c)
 	}
 	p = brand.Apply(p)
-	pl := paletteOf(p, brand.Accent)
+	pl := paletteOf(p, brand.Accent, brand.Exact)
 
 	dc := gg.NewContext(cardW, cardH)
 	setHex(dc, p.Field)

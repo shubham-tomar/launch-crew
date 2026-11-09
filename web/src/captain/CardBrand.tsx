@@ -6,8 +6,8 @@ import { asError } from './format'
 
 // Accents that read on the ink card (at least 4.5:1), in DESIGN.md's palette.
 const ACCENTS = ['#ADA9FF', '#58D3AE', '#D9A520', '#EC8669', '#7FB2FF']
-// Card fields: ink (the default), paper, indigo, cobalt and forest.
-const BACKGROUNDS = ['#15181F', '#F4EFE6', '#4A45D1', '#1C56AD', '#2B643B']
+// Card fields: ink (the default), paper, indigo, cobalt, forest and coral.
+const BACKGROUNDS = ['#15181F', '#F4EFE6', '#4A45D1', '#1C56AD', '#2B643B', '#EC8669']
 const TEXTS = ['#FFFFFF', '#16161A', '#E8EBF2', '#4A45D1']
 const DEFAULT_ACCENT = '#ADA9FF'
 const DEFAULT_BG = '#15181F'
