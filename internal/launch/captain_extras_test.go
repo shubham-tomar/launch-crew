@@ -355,15 +355,17 @@ func TestRepoBrandingReachesTheContributorCard(t *testing.T) {
 		t.Fatalf("no crew card urls: %+v", v.Crew)
 	}
 
-	// A preview draws unsaved branding and stores nothing; a bad accent is refused.
+	// A preview draws unsaved branding and stores nothing, even an unreadable
+	// accent (saving checks contrast); a malformed colour is still refused.
 	e.rendered = nil
 	e.mu.Unlock()
 	png, err := launch.RepoCardPreview(e.ctx, e.deps, e.owner.ID, e.repo.ID, launch.RepoPatch{Accent: str("#D9A520")})
-	_, badErr := launch.RepoCardPreview(e.ctx, e.deps, e.owner.ID, e.repo.ID, launch.RepoPatch{Accent: str("#000000")})
+	_, darkErr := launch.RepoCardPreview(e.ctx, e.deps, e.owner.ID, e.repo.ID, launch.RepoPatch{Accent: str("#000000")})
+	_, badErr := launch.RepoCardPreview(e.ctx, e.deps, e.owner.ID, e.repo.ID, launch.RepoPatch{Accent: str("nope")})
 	_, strangerErr := launch.RepoCardPreview(e.ctx, e.deps, uuid.New(), e.repo.ID, launch.RepoPatch{})
 	e.mu.Lock()
-	if err != nil || len(png) == 0 {
-		t.Fatalf("preview: %v", err)
+	if err != nil || len(png) == 0 || darkErr != nil {
+		t.Fatalf("preview: %v, dark accent: %v", err, darkErr)
 	}
 	if !errors.Is(badErr, launch.ErrInvalid) || !errors.Is(strangerErr, launch.ErrNotFound) {
 		t.Fatalf("bad accent %v, stranger %v", badErr, strangerErr)

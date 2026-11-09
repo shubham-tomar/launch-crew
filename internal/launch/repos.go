@@ -137,9 +137,9 @@ func hexField(v *string, cur, what string) (string, error) {
 }
 
 // branding resolves a patch against the stored row: colours checked and
-// upper-cased, the logo fetched through the QR logo guard and shrunk. The
-// text and accent must read on the chosen background. An unchanged logo URL
-// reuses the stored image instead of fetching it again.
+// upper-cased, the logo fetched through the QR logo guard and shrunk. An
+// unchanged logo URL reuses the stored image instead of fetching it again.
+// Contrast is left to readable, so a preview can draw any pick.
 func branding(ctx context.Context, d Deps, r sqlc.Repo, p RepoPatch) (cardBranding, error) {
 	b := cardBranding{logoURL: r.LogoUrl, logoPNG: r.LogoPng}
 	var err error
@@ -151,16 +151,6 @@ func branding(ctx context.Context, d Deps, r sqlc.Repo, p RepoPatch) (cardBrandi
 	}
 	if b.text, err = hexField(p.Text, r.CardText, "text colour"); err != nil {
 		return cardBranding{}, err
-	}
-	field := cards.Brand{Background: b.background}.Apply(cards.PresetFor(uuid.Nil)).Field
-	if b.text != "" && cards.Contrast(b.text, field) < 4.5 {
-		return cardBranding{}, invalid("that text colour is hard to read on the background; pick one with more contrast")
-	}
-	if b.accent != "" && cards.Contrast(b.accent, field) < 4.5 {
-		if b.background == "" {
-			return cardBranding{}, invalid("that accent is too dark to read on the card; pick a lighter one")
-		}
-		return cardBranding{}, invalid("that accent is hard to read on the background; pick one with more contrast")
 	}
 	if p.LogoURL != nil {
 		raw := strings.TrimSpace(*p.LogoURL)
@@ -184,11 +174,30 @@ func branding(ctx context.Context, d Deps, r sqlc.Repo, p RepoPatch) (cardBrandi
 	return b, nil
 }
 
+// readable checks that the text and accent read on the chosen background.
+// Only saving asks: the preview draws whatever the captain is trying out.
+func (b cardBranding) readable() error {
+	field := cards.Brand{Background: b.background}.Apply(cards.PresetFor(uuid.Nil)).Field
+	if b.text != "" && cards.Contrast(b.text, field) < 4.5 {
+		return invalid("that text colour is hard to read on the background; pick one with more contrast")
+	}
+	if b.accent != "" && cards.Contrast(b.accent, field) < 4.5 {
+		if b.background == "" {
+			return invalid("that accent is too dark to read on the card; pick a lighter one")
+		}
+		return invalid("that accent is hard to read on the background; pick one with more contrast")
+	}
+	return nil
+}
+
 // updateBranding stores a repo's card branding. The logo is kept shrunk in
 // the row, so rendering a card never fetches a captain's URL.
 func updateBranding(ctx context.Context, d Deps, r sqlc.Repo, p RepoPatch) (sqlc.Repo, error) {
 	b, err := branding(ctx, d, r, p)
 	if err != nil {
+		return r, err
+	}
+	if err := b.readable(); err != nil {
 		return r, err
 	}
 	out, err := d.Q.UpdateRepoBranding(ctx, sqlc.UpdateRepoBrandingParams{

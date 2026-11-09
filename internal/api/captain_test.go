@@ -205,8 +205,12 @@ func TestCaptainRoutesNeedTheOwner(t *testing.T) {
 		t.Fatalf("card preview: %d %.200s", rr.Code, rr.Body)
 	}
 	rr = e.do("POST", "/api/captain/repos/"+e.repo.ID.String()+"/card-preview", `{"accent":"#000000"}`, nil, mine)
+	if rr.Code != 200 {
+		t.Fatalf("dark accent preview should still draw: %d %.200s", rr.Code, rr.Body)
+	}
+	rr = e.do("PATCH", "/api/captain/repos/"+e.repo.ID.String(), `{"accent":"#000000"}`, nil, mine)
 	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("dark accent preview: %d", rr.Code)
+		t.Fatalf("dark accent save: %d", rr.Code)
 	}
 }
 

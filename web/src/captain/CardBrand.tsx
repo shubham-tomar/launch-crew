@@ -183,7 +183,7 @@ export default function CardBrand({ repo, onSaved }: { repo: Repo; onSaved: (r: 
           fallback={DEFAULT_ACCENT}
           value={accent}
           onChange={setAccent}
-          hint="Used for the avatar ring and highlights. Text and accent have to read on the background."
+          hint="Used for the avatar ring and highlights. Try any mix here; Save checks that the text and accent read on the background."
         />
         <figure className="rp-preview" aria-busy={card.loading || undefined}>
           {card.png ? (
