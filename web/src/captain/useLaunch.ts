@@ -61,6 +61,10 @@ export function useLaunch(id: string) {
     [id],
   )
 
+  // mutate applies a local change to the loaded detail, for optimistic edits
+  // whose server answer carries no detail (image add, remove, reorder).
+  const mutate = useCallback((fn: (d: Detail) => Detail) => setDetail((d) => (d ? fn(d) : d)), [])
+
   const skipDraft = useCallback(
     async (draftId: string, skipped: boolean) => {
       const d = await patchCaptainDraft(id, draftId, { skipped })
@@ -69,5 +73,5 @@ export function useLaunch(id: string) {
     [id],
   )
 
-  return { detail, error, reload, patch, editDraft, skipDraft }
+  return { detail, error, reload, patch, editDraft, skipDraft, mutate }
 }

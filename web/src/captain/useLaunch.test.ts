@@ -6,7 +6,7 @@ const detail = (over: Partial<Detail> = {}): Detail => ({
   id: 'l1', status: 'draft', source: 'github', title: 'one', summary: '', releaseTag: '', releaseUrl: '',
   launchAt: null, windowMinutes: 90, crewCap: 200, openCount: 0, openUrl: '', showUrl: '', pngUrl: '', roles: [],
   bufferConnected: true, headlines: [], chores: [], captainDrafts: [], crew: [], checks: [], deadLetters: [],
-  counts: { in: 0, total: 0 }, captainName: '', qrLogo: 'plane', qrLogoUrl: '', ...over,
+  counts: { in: 0, total: 0 }, captainName: '', qrLogo: 'plane', qrLogoUrl: '', images: [], includeCard: true, ...over,
 })
 
 const ok = (b: unknown) => new Response(JSON.stringify(b), { status: 200 })

@@ -152,9 +152,10 @@ func setup(t *testing.T) *env {
 	t.Cleanup(e.r2.Close)
 
 	tiny := onePixelPNG(t)
+	up := cards.NewUploader(e.r2.URL, "cards", "ak", "sk", "https://cdn.example")
 	e.deps = launch.Deps{
 		Q: q, Pool: pool, Buffer: bc, GitHub: ghc,
-		Cards: cards.NewUploader(e.r2.URL, "cards", "ak", "sk", "https://cdn.example"),
+		Cards: up, Images: up,
 		Render: func(c any, p cards.Preset) ([]byte, error) {
 			e.mu.Lock()
 			e.presets = append(e.presets, p)

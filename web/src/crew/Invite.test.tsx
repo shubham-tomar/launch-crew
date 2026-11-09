@@ -14,6 +14,8 @@ const base: View = {
   member: { id: 'm1', name: 'Ada', role: 'contributor', roleHint: '', state: 'invited', verified: true },
   card: { url: '/cards/m1.png', alt: 'Ada shipped Ship the thing' },
   preview: 'I helped ship the thing in acme v1.2.0.',
+  images: [],
+  includeCard: true,
   verified: true,
   foreign: false,
   needsVerify: false,

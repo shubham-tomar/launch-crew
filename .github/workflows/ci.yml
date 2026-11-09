@@ -73,14 +73,16 @@ jobs:
       - run: |
           npm ci --prefix web
           npm ci --prefix e2e
-      # Browsers are a few hundred MB; keep them between runs, keyed on the Playwright version.
+      # Browsers are a few hundred MB; keep them between runs, keyed on the Playwright
+      # version and the runner image: WebKit is built per Ubuntu release and links against
+      # that release's ICU, so a build cached on 24.04 does not start on 26.04.
       - id: pw
         run: echo "version=$(node -p "require('./e2e/node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: pw-cache
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+          key: playwright-${{ runner.os }}-${{ env.ImageOS }}-${{ steps.pw.outputs.version }}
       - name: Playwright browsers
         working-directory: e2e
         run: |

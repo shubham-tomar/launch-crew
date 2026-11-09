@@ -549,3 +549,44 @@
 .crew-refresh {
   align-self: center;
 }
+
+/* What attaches to the post: a strip of small square thumbnails under the card. */
+.crew-attach {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.crew-attach-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crew-attach-strip li {
+  inline-size: 64px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--rounded-mark);
+  background-color: var(--color-tint);
+}
+
+.crew-attach-strip img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* The card keeps its 2:1 shape; cropping it to a square would cut the words. */
+.crew-attach-strip .crew-attach-card {
+  inline-size: 128px;
+  aspect-ratio: 2 / 1;
+}
+
+.crew-attach-gone {
+  block-size: 100%;
+  padding: var(--space-xs);
+  font-size: var(--type-mono-size);
+}

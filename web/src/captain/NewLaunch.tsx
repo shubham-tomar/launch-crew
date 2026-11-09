@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { createLaunch, listTemplates, previewQr, type NewLaunch as Body, type QrLogo, type Role, type Template } from '../api'
+import { createLaunch, listTemplates, patchLaunch, previewQr, uploadLaunchImage, type NewLaunch as Body, type QrLogo, type Role, type Template } from '../api'
+import LaunchImages from './LaunchImages'
+import type { FailedUpload } from './LaunchDetail'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
 import Pass from '../components/Pass'
@@ -74,6 +76,11 @@ function HeroPreview({ url }: { url: string }) {
   )
 }
 
+type Queued = { id: string; file: File; url: string }
+
+// A preview URL for a picked file; empty where the browser (or jsdom) has none.
+const objectURL = (f: File) => (typeof URL.createObjectURL === 'function' ? URL.createObjectURL(f) : '')
+
 const sameRoles = (a: Role[], b: Role[]) => a.length === b.length && a.every((r, i) => r.name === b[i].name && r.hint === b[i].hint)
 
 const check = (
@@ -123,6 +130,31 @@ export default function NewLaunch() {
   const [templateId, setTemplateId] = useState('')
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+  // Images are held here and go up once the launch exists.
+  const [queued, setQueued] = useState<Queued[]>([])
+  const [includeCard, setIncludeCard] = useState(true)
+  const [uploadNote, setUploadNote] = useState('')
+
+  function addFiles(files: File[]) {
+    setQueued((q) => [...q, ...files.map((file, i) => ({ id: `q${Date.now()}-${q.length + i}`, file, url: objectURL(file) }))])
+  }
+  function removeQueued(id: string) {
+    setQueued((q) => {
+      const it = q.find((x) => x.id === id)
+      if (it?.url && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(it.url)
+      return q.filter((x) => x.id !== id)
+    })
+  }
+  function moveQueued(id: string, to: number) {
+    setQueued((q) => {
+      const from = q.findIndex((x) => x.id === id)
+      if (from < 0 || to < 0 || to >= q.length) return q
+      const next = [...q]
+      const [it] = next.splice(from, 1)
+      next.splice(to, 0, it)
+      return next
+    })
+  }
 
   const slide = useSlidePreview(title.trim(), qr, qrUrl.trim())
 
@@ -191,7 +223,24 @@ export default function NewLaunch() {
     setBusy(true)
     try {
       const d = await createLaunch(body)
-      navigate(`/captain/launches/${d.id}`)
+      // The launch exists now; whatever fails from here is named on its page, never lost.
+      const failed: FailedUpload[] = []
+      if (!includeCard) {
+        try {
+          await patchLaunch(d.id, { includeCard: false })
+        } catch (err) {
+          failed.push({ name: 'Release card switch', error: `Could not turn the card off: ${asError(err).message}` })
+        }
+      }
+      for (const [i, q] of queued.entries()) {
+        setUploadNote(`Uploading image ${i + 1} of ${queued.length}…`)
+        try {
+          await uploadLaunchImage(d.id, q.file)
+        } catch (err) {
+          failed.push({ name: q.file.name, error: asError(err).message })
+        }
+      }
+      navigate(`/captain/launches/${d.id}`, failed.length ? { state: { failedUploads: failed } } : undefined)
     } catch (err) {
       const ex = asError(err)
       const refused = ['hero_refused', 'hero_not_image', 'logo_refused', 'logo_not_image'].includes(ex.code)
@@ -353,6 +402,22 @@ export default function NewLaunch() {
               {HTTPS.test(hero.trim()) && <HeroPreview key={hero.trim()} url={hero.trim()} />}
             </div>
             {heroError && <span id="cap-hero-error" role="alert" className="nl-error">{heroError}</span>}
+            <fieldset className="nl-fieldset">
+              <legend>Images</legend>
+              <p className="nl-hint">Attached to every post, in this order. They go up once the launch is created.</p>
+              <LaunchImages
+                images={queued.map((q) => ({ id: q.id, url: q.url }))}
+                includeCard={includeCard}
+                hasCard
+                locked={false}
+                pending={[]}
+                onAdd={addFiles}
+                onRemove={removeQueued}
+                onMove={moveQueued}
+                onIncludeCard={setIncludeCard}
+              />
+              {uploadNote && <p role="status" className="nl-hint">{uploadNote}</p>}
+            </fieldset>
             <fieldset className="nl-fieldset">
               <legend>QR centre mark</legend>
               <p className="nl-hint">The small mark in the middle of the QR code on the event slide and PNG.</p>

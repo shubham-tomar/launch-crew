@@ -16,6 +16,7 @@ import (
 
 	"github.com/shubham-tomar/launchcrew/internal/buffer"
 	"github.com/shubham-tomar/launchcrew/internal/cards"
+	"github.com/shubham-tomar/launchcrew/internal/crew"
 	"github.com/shubham-tomar/launchcrew/internal/db/sqlc"
 	"github.com/shubham-tomar/launchcrew/internal/drafting"
 	"github.com/shubham-tomar/launchcrew/internal/preflight"
@@ -37,6 +38,8 @@ type state struct {
 	channelsOK bool // channels came back from Buffer this run
 	order      []buffer.Channel
 	cfg        *buffer.Config
+	// images are the captain's uploads, in posting order.
+	images []crew.Image
 }
 
 func load(ctx context.Context, d Deps, id uuid.UUID) (*state, error) {
@@ -64,6 +67,11 @@ func load(ctx context.Context, d Deps, id uuid.UUID) (*state, error) {
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("launch: captain identity: %w", err)
 	}
+	rows, err := d.Q.ListLaunchImages(ctx, l.ID)
+	if err != nil {
+		return nil, fmt.Errorf("launch: list images: %w", err)
+	}
+	s.images = crew.ImagesOf(rows)
 	return s, nil
 }
 
@@ -240,13 +248,16 @@ func ensureCaptainDrafts(ctx context.Context, d Deps, s *state) error {
 		have[cd.ChannelID] = true
 	}
 	asset, hasAsset := s.cardAsset(ctx, d)
+	// A channel that needs an image (Instagram) gets a draft only when the
+	// post would carry one: the card when the launch includes it, or an image.
+	willAttach := (hasAsset && s.l.IncludeCard) || len(s.images) > 0
 	cfg := buffer.Config{}
 	if s.cfg != nil {
 		cfg = *s.cfg
 	}
 	var hooks []drafting.HookType
 	for _, ch := range s.order {
-		if ok, _ := buffer.Eligible(ch, cfg, hasAsset); !ok || have[ch.ID] {
+		if ok, _ := buffer.Eligible(ch, cfg, willAttach); !ok || have[ch.ID] {
 			continue
 		}
 		n := network(ch.Service)
@@ -330,10 +341,17 @@ func runPreflight(ctx context.Context, d Deps, s *state, drafts []sqlc.CaptainDr
 	for _, cd := range drafts {
 		ch := s.channels[cd.ChannelID]
 		n := network(ch.Service)
+		rules := drafting.RulesFor(n, s.cfg)
+		var card crew.Image
+		if cd.AssetID.Valid {
+			if a, err := d.Q.GetLaunchAsset(ctx, cd.AssetID.UUID); err == nil {
+				card = crew.ImageOf(a)
+			}
+		}
 		pl.CaptainDrafts = append(pl.CaptainDrafts, preflight.Draft{
 			ChannelID: cd.ChannelID, Service: ch.Service, Network: string(n), Name: ch.Name,
 			Text: cd.Text, Thread: threadOf(cd.Thread), FirstComment: cd.FirstComment.String,
-			HasAsset: cd.AssetID.Valid && drafting.RulesFor(n, s.cfg).ImageOK,
+			HasAsset: len(crew.Attachments(card, s.l.IncludeCard, s.images, rules.MaxImages, rules.MaxImageBytes)) > 0,
 		})
 	}
 	return preflight.Run(ctx, d.preflightDeps(), pl)

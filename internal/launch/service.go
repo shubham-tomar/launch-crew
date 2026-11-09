@@ -60,6 +60,8 @@ type Deps struct {
 	Buffer *buffer.Client
 	GitHub *github.Client
 	Cards  trigger.CardStore
+	// Images stores captain uploads; Cards when nil and it can.
+	Images ImageStore
 	// Render draws cards; cards.Render when nil.
 	Render    func(c any, p cards.Preset) ([]byte, error)
 	Preflight preflight.Deps
@@ -320,12 +322,16 @@ func CreateManual(ctx context.Context, d Deps, ownerID uuid.UUID, in trigger.Man
 	return summaryOf(l), tok, nil
 }
 
+// putAsset stores a rendered PNG with its size and, when it is over
+// Bluesky's limit, a small copy, so a hero or card posts to Bluesky too.
 func putAsset(ctx context.Context, d Deps, q *sqlc.Queries, launchID uuid.UUID, kind string, png []byte) (sqlc.LaunchAsset, error) {
-	url, sha, err := d.Cards.Put(ctx, png)
+	st, err := d.Cards.PutCard(ctx, png)
 	if err != nil {
 		return sqlc.LaunchAsset{}, fmt.Errorf("launch: upload %s: %w", kind, err)
 	}
-	a, err := q.InsertLaunchAsset(ctx, sqlc.InsertLaunchAssetParams{LaunchID: launchID, Kind: kind, R2Url: url, Sha: sha})
+	a, err := q.InsertLaunchAsset(ctx, sqlc.InsertLaunchAssetParams{
+		LaunchID: launchID, Kind: kind, R2Url: st.URL, Sha: st.Sha, Bytes: st.Bytes, SmallUrl: st.Small,
+	})
 	if err != nil {
 		return a, fmt.Errorf("launch: save %s asset: %w", kind, err)
 	}

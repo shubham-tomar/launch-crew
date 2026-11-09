@@ -1,7 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import NewLaunch from './NewLaunch'
+import App from '../App'
+import type { Detail } from '../api'
+import { pngFile, stubXhr } from '../test/xhr'
 
 type Call = { method: string; url: string; body?: Record<string, unknown> }
 const isCreate = (c: Call) => c.method === 'POST' && c.url.endsWith('/launches')
@@ -158,4 +161,44 @@ test('a picked template is sent with the launch; the built-in sends none', async
   expect(select).toHaveTextContent('Meetups')
   await userEvent.click(screen.getByRole('button', { name: 'Create launch' }))
   expect(calls.find(isCreate)?.body).toMatchObject({ title: 'Go night', templateId: 't1' })
+})
+
+// Images picked on New launch go up after the launch exists. One that fails must not
+// lose the launch: the captain lands on its page and the failed file is named there.
+test('a failed upload after create still opens the launch and names the file', async () => {
+  const sent = stubXhr([
+    { status: 201, body: { id: 'i1', url: 'https://cdn.example/uploads/1.jpg' } },
+    { status: 400, body: { error: 'not_image', message: 'Use a JPEG, PNG, GIF or WebP image.' } },
+  ])
+  const created: Detail = {
+    id: 'new1', status: 'draft', source: 'manual', title: 'Go night', summary: '', releaseTag: '', releaseUrl: '', launchAt: null,
+    windowMinutes: 90, crewCap: 200, openCount: 0, openUrl: '', showUrl: '', pngUrl: '', roles: [], bufferConnected: true,
+    headlines: [], chores: [], captainDrafts: [], crew: [], checks: [], deadLetters: [], counts: { in: 0, total: 0 },
+    captainName: 'You', qrLogo: 'plane', qrLogoUrl: '', images: [{ id: 'i1', url: 'https://cdn.example/uploads/1.jpg' }], includeCard: true,
+  }
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string, init?: RequestInit) => {
+      const ok = (b: unknown, s = 200) => Promise.resolve(new Response(JSON.stringify(b), { status: s }))
+      if (url.endsWith('/templates')) return ok({ templates: [] })
+      if (url.endsWith('/qr-preview')) return ok({ png: 'data:image/png;base64,QR' })
+      if (url === '/api/captain/launches' && init?.method === 'POST') return ok(created, 201)
+      return ok(created)
+    }),
+  )
+  render(
+    <MemoryRouter initialEntries={['/captain/new']}>
+      <App />
+    </MemoryRouter>,
+  )
+  await userEvent.type(await screen.findByLabelText('Title'), 'Go night')
+  fireEvent.change(screen.getByLabelText('Add images'), { target: { files: [pngFile('one.png'), pngFile('two.heic.png')] } })
+  expect(screen.getByRole('img', { name: 'Image 2' })).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Create launch' }))
+  expect(await screen.findByRole('heading', { level: 1, name: 'Go night' })).toBeInTheDocument()
+  expect(sent.map((s) => s.file.name)).toEqual(['one.png', 'two.heic.png'])
+  expect(sent[0].url).toBe('/api/captain/launches/new1/images')
+  expect(screen.getByText('two.heic.png')).toBeInTheDocument()
+  expect(screen.getByText('Use a JPEG, PNG, GIF or WebP image.')).toBeInTheDocument()
+  expect(screen.getByRole('img', { name: 'Image 1' })).toHaveAttribute('src', 'https://cdn.example/uploads/1.jpg')
 })

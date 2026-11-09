@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log"
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -804,7 +806,7 @@ func TestPostAttachesMemberCard(t *testing.T) {
 	}
 	e.fake.Script("CreatePost", success("p-1"), success("p-2"))
 	out, err := crew.Post(ctx, e.deps, e.memberID, []crew.Selection{
-		{ChannelID: "x1", Text: "shipped it", Timing: crew.TimingQueue, AssetURL: "https://evil.example/x.png"},
+		{ChannelID: "x1", Text: "shipped it", Timing: crew.TimingQueue, Attach: true, Card: crew.Image{URL: "https://evil.example/x.png"}},
 		{ChannelID: "x2", Text: "shipped it too", Timing: crew.TimingQueue},
 	})
 	if err != nil || len(out) != 2 {
@@ -858,5 +860,268 @@ func TestDraftWriteFailureIsRecordedOnTheAttempt(t *testing.T) {
 	}
 	if d := e.draft(t, "x1"); d.BufferPostID.Valid {
 		t.Fatalf("draft = %+v; the constraint should have refused the write", d)
+	}
+}
+
+func (e *env) addImage(t *testing.T, url string) sqlc.LaunchAsset {
+	return e.addSizedImage(t, url, 400_000, "")
+}
+
+func (e *env) addSizedImage(t *testing.T, url string, bytes int64, small string) sqlc.LaunchAsset {
+	t.Helper()
+	a, err := e.q.InsertLaunchImage(context.Background(), sqlc.InsertLaunchImageParams{LaunchID: e.launch.ID, R2Url: url, Sha: url, Bytes: bytes, SmallUrl: small})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+func (e *env) giveCard(t *testing.T, url string) {
+	t.Helper()
+	ctx := context.Background()
+	a, err := e.q.InsertLaunchAsset(ctx, sqlc.InsertLaunchAssetParams{LaunchID: e.launch.ID, Kind: "contributor", R2Url: url, Sha: "sha-" + url})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.q.UpdateCrewMemberCard(ctx, sqlc.UpdateCrewMemberCardParams{ID: e.memberID, CardAssetID: uuid.NullUUID{UUID: a.ID, Valid: true}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assetURLs(in map[string]any) []string {
+	var out []string
+	assets, _ := in["assets"].([]any)
+	for _, a := range assets {
+		img, _ := a.(map[string]any)["image"].(map[string]any)
+		out = append(out, img["url"].(string))
+	}
+	return out
+}
+
+// The images are read when the post is sent, so one the captain removed
+// after the crew member approved is not attached.
+func TestCrewPostUsesCurrentImages(t *testing.T) {
+	e := setup(t, channel{"x1", "twitter", "@ana"}, channel{"x2", "twitter", "@ana2"})
+	ctx := context.Background()
+	const card = "https://r2.example/cards/ana.png"
+	e.giveCard(t, card)
+	i1 := e.addImage(t, "https://r2.example/uploads/one.jpg")
+	e.addImage(t, "https://r2.example/uploads/two.jpg")
+	e.fake.Script("CreatePost", success("p-1"), success("p-2"))
+
+	out, err := crew.Post(ctx, e.deps, e.memberID, []crew.Selection{{ChannelID: "x1", Text: "first", Timing: crew.TimingQueue, Attach: true}})
+	if err != nil || out[0].Status != "queued" {
+		t.Fatalf("post 1: %+v %v", out, err)
+	}
+	if _, err := e.q.DeleteLaunchImage(ctx, sqlc.DeleteLaunchImageParams{ID: i1.ID, LaunchID: e.launch.ID}); err != nil {
+		t.Fatal(err)
+	}
+	out, err = crew.Post(ctx, e.deps, e.memberID, []crew.Selection{{ChannelID: "x2", Text: "second", Timing: crew.TimingQueue, Attach: true}})
+	if err != nil || out[0].Status != "queued" {
+		t.Fatalf("post 2: %+v %v", out, err)
+	}
+	ins := createInputs(e.fake)
+	if len(ins) != 2 {
+		t.Fatalf("%d creates", len(ins))
+	}
+	want1 := []string{card, "https://r2.example/uploads/one.jpg", "https://r2.example/uploads/two.jpg"}
+	if got := assetURLs(ins[0]); !reflect.DeepEqual(got, want1) {
+		t.Errorf("first post assets = %v, want %v", got, want1)
+	}
+	want2 := []string{card, "https://r2.example/uploads/two.jpg"}
+	if got := assetURLs(ins[1]); !reflect.DeepEqual(got, want2) {
+		t.Errorf("second post assets = %v, want %v (removed image gone)", got, want2)
+	}
+}
+
+func TestCrewPostCapsImagesPerNetwork(t *testing.T) {
+	e := setup(t, channel{"x1", "twitter", "@ana"}, channel{"li", "linkedin", "Ana"})
+	ctx := context.Background()
+	const card = "https://r2.example/cards/ana.png"
+	e.giveCard(t, card)
+	var imgs []string
+	for i := 0; i < 5; i++ {
+		u := fmt.Sprintf("https://r2.example/uploads/%d.jpg", i)
+		e.addImage(t, u)
+		imgs = append(imgs, u)
+	}
+	e.fake.Script("CreatePost", success("p-1"), success("p-2"))
+	out, err := crew.Post(ctx, e.deps, e.memberID, []crew.Selection{
+		{ChannelID: "x1", Text: "x post", Timing: crew.TimingQueue, Attach: true},
+		{ChannelID: "li", Text: "li post", Timing: crew.TimingQueue, Attach: true},
+	})
+	if err != nil || out[0].Status != "queued" || out[1].Status != "queued" {
+		t.Fatalf("post: %+v %v", out, err)
+	}
+	byText := map[string][]string{}
+	for _, in := range createInputs(e.fake) {
+		byText[in["text"].(string)] = assetURLs(in)
+	}
+	if want := append([]string{card}, imgs[:3]...); !reflect.DeepEqual(byText["x post"], want) {
+		t.Errorf("X assets = %v, want %v (4 max)", byText["x post"], want)
+	}
+	if want := append([]string{card}, imgs...); !reflect.DeepEqual(byText["li post"], want) {
+		t.Errorf("LinkedIn assets = %v, want %v", byText["li post"], want)
+	}
+}
+
+// Card switch off and no images: nothing is attached, and a network that
+// takes no images is not told the post carries one.
+func TestNoCardNoImages(t *testing.T) {
+	e := setup(t, channel{"yt", "youtube", "Ana"}, channel{"x1", "twitter", "@ana"})
+	ctx := context.Background()
+	const card = "https://r2.example/cards/ana.png"
+	e.giveCard(t, card)
+	if err := e.q.SetLaunchIncludeCard(ctx, sqlc.SetLaunchIncludeCardParams{ID: e.launch.ID, IncludeCard: false}); err != nil {
+		t.Fatal(err)
+	}
+	e.fake.Script("CreatePost", success("p-1"), success("p-2"))
+	out, err := crew.Post(ctx, e.deps, e.memberID, []crew.Selection{
+		{ChannelID: "yt", Text: "yt post", Timing: crew.TimingQueue, Attach: true},
+		{ChannelID: "x1", Text: "x post", Timing: crew.TimingQueue, Attach: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range out {
+		if o.Status != "queued" {
+			t.Errorf("%s: %+v, want queued (no image to object to)", o.ChannelID, o)
+		}
+	}
+	for _, in := range createInputs(e.fake) {
+		if _, has := in["assets"]; has {
+			t.Errorf("%v sent assets %v with the card off and no images", in["text"], in["assets"])
+		}
+	}
+}
+
+// Images attach even when the member has no card of their own, and the
+// selection only asks: what is attached is what the launch has now, so an
+// image added after the person approved goes out too.
+func TestCrewPostImagesWithoutCard(t *testing.T) {
+	e := setup(t, channel{"x1", "twitter", "@ana"})
+	e.addImage(t, "https://r2.example/uploads/only.jpg")
+	e.fake.Script("CreatePost", success("p-1"))
+	out, err := crew.Post(context.Background(), e.deps, e.memberID, []crew.Selection{
+		{ChannelID: "x1", Text: "x post", Timing: crew.TimingQueue, Attach: true},
+	})
+	if err != nil || out[0].Status != "queued" {
+		t.Fatalf("post: %+v %v", out, err)
+	}
+	if got := assetURLs(createInputs(e.fake)[0]); !reflect.DeepEqual(got, []string{"https://r2.example/uploads/only.jpg"}) {
+		t.Errorf("assets = %v, want the image alone", got)
+	}
+}
+
+// Bluesky takes images up to 1 MB and Buffer cannot shrink them: an image over
+// it goes as its small copy, one without a copy is left out of that post only.
+func TestBlueskyGetsSmallCopies(t *testing.T) {
+	e := setup(t, channel{"bs", "bluesky", "ana.bsky"}, channel{"x1", "twitter", "@ana"})
+	ctx := context.Background()
+	const card = "https://r2.example/cards/ana.png"
+	e.giveCard(t, card)
+	e.addSizedImage(t, "https://r2.example/uploads/small.png", 500_000, "")
+	e.addSizedImage(t, "https://r2.example/uploads/big.png", 3_000_000, "https://r2.example/uploads/big-small.jpg")
+	e.addSizedImage(t, "https://r2.example/uploads/huge.png", 9_000_000, "")
+	e.fake.Script("CreatePost", success("p-1"), success("p-2"))
+	out, err := crew.Post(ctx, e.deps, e.memberID, []crew.Selection{
+		{ChannelID: "bs", Text: "bluesky post", Timing: crew.TimingQueue, Attach: true},
+		{ChannelID: "x1", Text: "x post", Timing: crew.TimingQueue, Attach: true},
+	})
+	if err != nil || out[0].Status != "queued" || out[1].Status != "queued" {
+		t.Fatalf("post: %+v %v", out, err)
+	}
+	byText := map[string][]string{}
+	for _, in := range createInputs(e.fake) {
+		byText[in["text"].(string)] = assetURLs(in)
+	}
+	want := []string{card, "https://r2.example/uploads/small.png", "https://r2.example/uploads/big-small.jpg"}
+	if !reflect.DeepEqual(byText["bluesky post"], want) {
+		t.Errorf("Bluesky assets = %v, want %v", byText["bluesky post"], want)
+	}
+	want = []string{card, "https://r2.example/uploads/small.png", "https://r2.example/uploads/big.png", "https://r2.example/uploads/huge.png"}
+	if !reflect.DeepEqual(byText["x post"], want) {
+		t.Errorf("X assets = %v, want the originals %v", byText["x post"], want)
+	}
+}
+
+// When the images cannot be read the post is not sent half-dressed: the
+// attempt fails with a retryable note instead.
+func TestCrewPostFailsWhenImagesCannotBeRead(t *testing.T) {
+	e := setup(t, channel{"x1", "twitter", "@ana"})
+	ctx := context.Background()
+	e.giveCard(t, "https://r2.example/cards/ana.png")
+	e.addImage(t, "https://r2.example/uploads/one.png")
+	// Break the image listing for this test only.
+	if _, err := e.pool.Exec(ctx, `ALTER TABLE launch_assets RENAME COLUMN position TO lc_test_hidden`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = e.pool.Exec(context.Background(), `ALTER TABLE launch_assets RENAME COLUMN lc_test_hidden TO position`)
+	})
+	e.fake.Script("CreatePost", success("p-1"))
+	// PostAll takes the resolved selection, as Post hands it over once it has
+	// picked the card; the rename above also hides the card from Post itself.
+	out, err := crew.PostAll(ctx, e.deps, e.memberID, []crew.Selection{{ChannelID: "x1", Text: "x post", Timing: crew.TimingQueue, Attach: true, Card: crew.Image{URL: "https://r2.example/cards/ana.png"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out[0].Status != "failed" || !strings.Contains(out[0].Note, "try again") {
+		t.Errorf("outcome = %+v, want failed with a retry note", out[0])
+	}
+	if n := len(createInputs(e.fake)); n != 0 {
+		t.Errorf("%d posts reached Buffer without their images", n)
+	}
+}
+
+// A member's card over Bluesky's limit goes to Bluesky as its small copy and
+// to X as it is.
+func TestBlueskyGetsTheSmallCardCopy(t *testing.T) {
+	e := setup(t, channel{"bs", "bluesky", "ana.bsky"}, channel{"x1", "twitter", "@ana"})
+	ctx := context.Background()
+	card := crew.Image{URL: "https://r2.example/cards/hero.png", Bytes: 2_000_000, Small: "https://r2.example/uploads/hero-small.jpg"}
+	e.addImage(t, "https://r2.example/uploads/one.png")
+	e.fake.Script("CreatePost", success("p-1"), success("p-2"))
+	out, err := crew.PostAll(ctx, e.deps, e.memberID, []crew.Selection{
+		{ChannelID: "bs", Text: "bluesky post", Timing: crew.TimingQueue, Attach: true, Card: card},
+		{ChannelID: "x1", Text: "x post", Timing: crew.TimingQueue, Attach: true, Card: card},
+	})
+	if err != nil || out[0].Status != "queued" || out[1].Status != "queued" {
+		t.Fatalf("post: %+v %v", out, err)
+	}
+	byText := map[string][]string{}
+	for _, in := range createInputs(e.fake) {
+		byText[in["text"].(string)] = assetURLs(in)
+	}
+	if want := []string{card.Small, "https://r2.example/uploads/one.png"}; !reflect.DeepEqual(byText["bluesky post"], want) {
+		t.Errorf("Bluesky assets = %v, want %v", byText["bluesky post"], want)
+	}
+	if want := []string{card.URL, "https://r2.example/uploads/one.png"}; !reflect.DeepEqual(byText["x post"], want) {
+		t.Errorf("X assets = %v, want %v", byText["x post"], want)
+	}
+}
+
+// Post fills the card slot with the member's own card, size and copy
+// included, so the posting job can pick the right file per network.
+func TestPostCarriesTheCardWithItsSmallCopy(t *testing.T) {
+	e := setup(t, channel{"bs", "bluesky", "ana.bsky"})
+	ctx := context.Background()
+	a, err := e.q.InsertLaunchAsset(ctx, sqlc.InsertLaunchAssetParams{
+		LaunchID: e.launch.ID, Kind: "contributor", R2Url: "https://r2.example/cards/big.png", Sha: "big",
+		Bytes: 2_000_000, SmallUrl: "https://r2.example/uploads/big-small.jpg",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.q.UpdateCrewMemberCard(ctx, sqlc.UpdateCrewMemberCardParams{ID: e.memberID, CardAssetID: uuid.NullUUID{UUID: a.ID, Valid: true}}); err != nil {
+		t.Fatal(err)
+	}
+	e.fake.Script("CreatePost", success("p-1"))
+	out, err := crew.Post(ctx, e.deps, e.memberID, []crew.Selection{{ChannelID: "bs", Text: "bluesky post", Timing: crew.TimingQueue, Attach: true}})
+	if err != nil || out[0].Status != "queued" {
+		t.Fatalf("post: %+v %v", out, err)
+	}
+	if got := assetURLs(createInputs(e.fake)[0]); !reflect.DeepEqual(got, []string{"https://r2.example/uploads/big-small.jpg"}) {
+		t.Errorf("Bluesky assets = %v, want the small copy of the card", got)
 	}
 }

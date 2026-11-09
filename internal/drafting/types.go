@@ -23,6 +23,11 @@ var AllNetworks = []Network{Twitter, Bluesky, Threads, Mastodon, LinkedIn, Faceb
 type Rules struct {
 	MaxChars                             int
 	Threads, ImageOK, LinkInFirstComment bool
+	// MaxImages is how many images one post takes; 0 when ImageOK is false.
+	// MaxImageBytes is the per-image size the network holds to and Buffer
+	// cannot resize for (Bluesky); 0 where Buffer resizes.
+	MaxImages     int
+	MaxImageBytes int
 }
 
 // Change is one merged change in a release.

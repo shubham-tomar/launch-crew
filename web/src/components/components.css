@@ -905,6 +905,83 @@ a.btn {
   inline-size: 40%;
 }
 
+/* What an image leaves behind once R2 has dropped it. */
+.img-gone {
+  display: grid;
+  place-items: center;
+  padding: var(--space-sm);
+  color: var(--color-text-muted);
+  font-size: var(--type-small-size);
+  text-align: center;
+}
+
+/* Switch: a 44px tall label with a hidden checkbox, a track and a thumb. */
+.rp-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-ms);
+  min-block-size: 44px;
+  cursor: pointer;
+}
+
+.rp-switch input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.rp-track {
+  position: relative;
+  flex: none;
+  inline-size: 2.5rem;
+  block-size: 1.5rem;
+  border-radius: var(--rounded-full);
+  background-color: var(--color-hairline);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-muted) 35%, transparent);
+  transition: background-color 120ms;
+}
+
+.rp-thumb {
+  position: absolute;
+  inset-block-start: 3px;
+  inset-inline-start: 3px;
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  border-radius: var(--rounded-full);
+  background-color: var(--color-text-muted);
+  transition: transform 120ms, background-color 120ms;
+}
+
+.rp-switch:has(input:checked) .rp-track {
+  background-color: var(--color-accent);
+  box-shadow: none;
+}
+
+.rp-switch:has(input:checked) .rp-thumb {
+  transform: translateX(1rem);
+  background-color: var(--color-on-accent);
+}
+
+.rp-switch:has(input:focus-visible) {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--rounded-full);
+}
+
+.rp-switch-text {
+  font-size: var(--type-small-size);
+}
+
+.rp-switch:has(input:disabled) {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Select: a field-styled button that opens a list on the raised surface, in place of the system menu. */
 .select {
   position: relative;

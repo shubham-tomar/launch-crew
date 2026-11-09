@@ -2,7 +2,7 @@
 // round trips (every OAuth page is a fake that approves at once).
 import { expect, type APIRequestContext, type Browser, type Page } from '@playwright/test'
 
-export type Post = { id: string; channelId: string; mode: string; dueAt?: string; saveToDraft: boolean; text: string }
+export type Post = { id: string; channelId: string; mode: string; dueAt?: string; saveToDraft: boolean; text: string; assets: string[] }
 export type LaunchRow = { id: string; status: string; title: string; launchAt: string | null; windowMinutes: number }
 export type Comment = { id: number; body: string }
 

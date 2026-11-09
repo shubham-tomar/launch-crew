@@ -1,8 +1,9 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, useLocation } from 'react-router'
 import App from '../App'
 import type { Check, Detail, LaunchSummary } from '../api'
+import { pngFile, stubXhr } from '../test/xhr'
 
 const checks = (red: number): Check[] =>
   Array.from({ length: 7 }, (_, i) => ({
@@ -39,6 +40,8 @@ const detail = (over: Partial<Detail> = {}): Detail => ({
   captainName: 'Shubham Tomar',
   qrLogo: 'plane',
   qrLogoUrl: '',
+  images: [],
+  includeCard: true,
   ...over,
 })
 
@@ -46,7 +49,7 @@ type Call = { method: string; url: string; body?: unknown }
 
 let refreshReply = () => Promise.resolve(new Response(JSON.stringify({ channels: 3 }), { status: 200 }))
 
-function mockApi(routes: { detail?: Detail; list?: LaunchSummary[] } = {}) {
+function mockApi(routes: { detail?: Detail; list?: LaunchSummary[]; remove?: () => Promise<Response> } = {}) {
   const calls: Call[] = []
   vi.stubGlobal(
     'fetch',
@@ -57,16 +60,23 @@ function mockApi(routes: { detail?: Detail; list?: LaunchSummary[] } = {}) {
       if (url === '/api/captain/launches' && method === 'GET') return ok(routes.list ?? [])
       if (url.endsWith('/channels/refresh')) return refreshReply()
       if (url.includes('/retry/') || url.endsWith('/retry-comment')) return ok({ status: 'retrying' }, 202)
+      if (method === 'DELETE' && url.includes('/images/')) return (routes.remove ?? (() => Promise.resolve(new Response(null, { status: 204 }))))()
       return ok(routes.detail ?? detail())
     }),
   )
   return calls
 }
 
-function visit(path: string) {
+// What the router holds as the current entry's state, for tests that hand one over.
+function LocationState() {
+  return <span data-testid="location-state">{JSON.stringify(useLocation().state)}</span>
+}
+
+function visit(path: string, state?: unknown) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter initialEntries={[state === undefined ? path : { pathname: path, state }]}>
       <App />
+      <LocationState />
     </MemoryRouter>,
   )
 }
@@ -582,4 +592,106 @@ test('the release card and each crew card open from a fold', async () => {
   expect(cards).toHaveLength(1) // bob has no card yet
   await userEvent.click(cards[0])
   expect(screen.getByRole('img', { name: 'Contributor card for ada' })).toHaveAttribute('src', 'https://cdn.example/cards/ada.png')
+})
+
+test('uploads picked files one after the other and shows them', async () => {
+  const sent = stubXhr([
+    { status: 201, body: { id: 'i1', url: 'https://cdn.example/uploads/1.jpg' } },
+    { status: 201, body: { id: 'i2', url: 'https://cdn.example/uploads/2.jpg' } },
+  ])
+  mockApi()
+  visit('/captain/launches/l1')
+  fireEvent.change(await screen.findByLabelText('Add images'), { target: { files: [pngFile('a.png'), pngFile('b.png')] } })
+  expect(await screen.findByRole('img', { name: 'Image 2' })).toHaveAttribute('src', 'https://cdn.example/uploads/2.jpg')
+  expect(screen.getByRole('img', { name: 'Image 1' })).toHaveAttribute('src', 'https://cdn.example/uploads/1.jpg')
+  expect(sent.map((s) => s.file.name)).toEqual(['a.png', 'b.png'])
+  expect(sent[0].url).toBe('/api/captain/launches/l1/images')
+  expect(sent[1].completedBefore).toBe(1)
+  expect(screen.queryByRole('progressbar')).toBeNull()
+})
+
+test('removing an image calls DELETE and drops the tile at once', async () => {
+  const calls = mockApi({ detail: detail({ images: [{ id: 'i1', url: 'https://cdn.example/uploads/1.jpg' }, { id: 'i2', url: 'https://cdn.example/uploads/2.jpg' }] }) })
+  visit('/captain/launches/l1')
+  await userEvent.click(await screen.findByRole('button', { name: 'Remove image 1' }))
+  expect(screen.getByRole('img', { name: 'Image 1' })).toHaveAttribute('src', 'https://cdn.example/uploads/2.jpg')
+  expect(screen.queryByRole('img', { name: 'Image 2' })).toBeNull()
+  await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url === '/api/captain/launches/l1/images/i1')).toBe(true))
+})
+
+test('moving an image later sends the new order', async () => {
+  const calls = mockApi({ detail: detail({ images: [{ id: 'i1', url: 'u1' }, { id: 'i2', url: 'u2' }, { id: 'i3', url: 'u3' }] }) })
+  visit('/captain/launches/l1')
+  await userEvent.click(await screen.findByRole('button', { name: 'Move image 1 later' }))
+  expect(screen.getByRole('img', { name: 'Image 1' })).toHaveAttribute('src', 'u2')
+  await waitFor(() => expect(calls.find((c) => c.method === 'PUT' && c.url.endsWith('/images/order'))?.body).toEqual({ ids: ['i2', 'i1', 'i3'] }))
+})
+
+test('the card switch patches includeCard, and a launched launch locks the images', async () => {
+  const calls = mockApi({ detail: detail({ cardUrl: 'https://cdn.example/cards/release.png', images: [{ id: 'i1', url: 'u1' }] }) })
+  visit('/captain/launches/l1')
+  await userEvent.click(await screen.findByRole('switch', { name: 'Attach the launch card' }))
+  await waitFor(() => expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ includeCard: false }))
+  cleanup()
+  mockApi({ detail: detail({ status: 'launched', launchAt: new Date(Date.now() + 3_600_000).toISOString(), images: [{ id: 'i1', url: 'u1' }] }) })
+  visit('/captain/launches/l1')
+  expect(await screen.findByText('Images are locked once the launch is out.')).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Remove image 1' })).toBeNull()
+})
+
+test('a release card that no longer loads says it was removed', async () => {
+  mockApi({ detail: detail({ cardUrl: 'https://cdn.example/cards/release.png' }) })
+  visit('/captain/launches/l1')
+  fireEvent.error(await screen.findByRole('img', { name: 'Release card for rocket v1.2.0' }))
+  expect(screen.getByText('Removed after 60 days')).toBeInTheDocument()
+})
+
+test('a launch without a card has no card switch', async () => {
+  mockApi({ detail: detail({ cardUrl: '', images: [{ id: 'i1', url: 'u1' }] }) })
+  visit('/captain/launches/l1')
+  await screen.findByRole('img', { name: 'Image 1' })
+  expect(screen.queryByRole('switch', { name: 'Attach the launch card' })).toBeNull()
+})
+
+test('failed uploads handed over by New launch show once and leave the history entry', async () => {
+  mockApi()
+  visit('/captain/launches/l1', { failedUploads: [{ name: 'b.heic', error: 'Use a JPEG, PNG, GIF or WebP image.' }] })
+  expect(await screen.findByText('Use a JPEG, PNG, GIF or WebP image.')).toBeInTheDocument()
+  expect(screen.getByText('b.heic')).toBeInTheDocument()
+  // A reload or back would re-read the entry's state: it holds nothing now.
+  await waitFor(() => expect(screen.getByTestId('location-state')).toHaveTextContent('null'))
+  expect(screen.getByText('b.heic')).toBeInTheDocument()
+})
+
+test('a reorder waits for an in-flight remove and sends the list without the removed image', async () => {
+  let finishRemove!: () => void
+  const removed = new Promise<Response>((r) => { finishRemove = () => r(new Response(null, { status: 204 })) })
+  const calls = mockApi({
+    detail: detail({ images: [{ id: 'i1', url: 'u1' }, { id: 'i2', url: 'u2' }, { id: 'i3', url: 'u3' }] }),
+    remove: () => removed,
+  })
+  visit('/captain/launches/l1')
+  await userEvent.click(await screen.findByRole('button', { name: 'Remove image 1' }))
+  expect(screen.getByRole('img', { name: 'Image 1' })).toHaveAttribute('src', 'u2')
+  await userEvent.click(screen.getByRole('button', { name: 'Move image 1 later' }))
+  expect(screen.getByRole('img', { name: 'Image 1' })).toHaveAttribute('src', 'u3')
+  expect(calls.find((c) => c.method === 'PUT')).toBeUndefined()
+  finishRemove()
+  await waitFor(() => expect(calls.find((c) => c.method === 'PUT' && c.url.endsWith('/images/order'))?.body).toEqual({ ids: ['i3', 'i2'] }))
+  expect(screen.getByRole('img', { name: 'Image 1' })).toHaveAttribute('src', 'u3')
+})
+
+test('a refused remove reloads the launch rather than guessing what is left', async () => {
+  const calls = mockApi({
+    detail: detail({ images: [{ id: 'i1', url: 'u1' }, { id: 'i2', url: 'u2' }] }),
+    remove: () => Promise.resolve(new Response(JSON.stringify({ error: 'images_locked', message: 'Images are locked once the launch is out.' }), { status: 409 })),
+  })
+  visit('/captain/launches/l1')
+  await screen.findByRole('img', { name: 'Image 2' })
+  const loads = () => calls.filter((c) => c.method === 'GET' && c.url === '/api/captain/launches/l1').length
+  const before = loads()
+  await userEvent.click(screen.getByRole('button', { name: 'Remove image 1' }))
+  expect(await screen.findByText('Images are locked once the launch is out.')).toBeInTheDocument()
+  await waitFor(() => expect(loads()).toBe(before + 1))
+  expect(screen.getByRole('img', { name: 'Image 1' })).toHaveAttribute('src', 'u1')
 })

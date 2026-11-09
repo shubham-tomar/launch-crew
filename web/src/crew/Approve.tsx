@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { ApiError, connect, disconnect, post, refreshMyChannels, saveDraft, updateVoice, type ApproveView, type Outcome, type Timing } from '../api'
+import { ApiError, connect, disconnect, post, refreshMyChannels, saveDraft, updateVoice, type ApproveView, type Channel, type Outcome, type Timing, type View } from '../api'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
 import Chip from '../components/Chip'
@@ -9,10 +9,11 @@ import DraftBox from '../components/DraftBox'
 import IconButton from '../components/IconButton'
 import Loader from '../components/Loader'
 import Pass from '../components/Pass'
+import SafeImg from '../components/SafeImg'
 import ServiceIcon from '../components/ServiceIcon'
 import VoiceCard, { type VoiceEdit } from '../components/VoiceCard'
 import Results from './Results'
-import { serviceName } from './format'
+import { imagesPerPost, listNames, serviceName } from './format'
 import { CrewFrame, Dead, Foreign, useInvite } from './shared'
 import { useDrafts } from './useDrafts'
 
@@ -79,6 +80,48 @@ function TrustStrip({ memberId, token }: { memberId?: string; token: string }) {
       any time
     </p>
     </>
+  )
+}
+
+// What the posts carry: the card when the captain includes it, then the launch's
+// images; and which of the chosen channels take fewer than that.
+function Attached({ invite, channels }: { invite: View; channels: Channel[] }) {
+  const images = invite.images ?? []
+  const items = [
+    ...(invite.includeCard && invite.card ? [{ url: invite.card.url, alt: invite.card.alt, card: true }] : []),
+    ...images.map((im, i) => ({ url: im.url, alt: `Image ${i + 1}`, card: false })),
+  ]
+  if (items.length === 0) return null
+  // Bluesky holds images to 1 MB and Buffer cannot shrink them; a copy is made where it
+  // can be, the rest are left out of the Bluesky post.
+  const skipped = channels.some((c) => c.service.toLowerCase() === 'bluesky') ? images.filter((im) => !im.bluesky).length : 0
+  const byCap = new Map<number, string[]>()
+  for (const c of channels) {
+    const n = imagesPerPost(c.service)
+    if (n <= 0 || n >= items.length) continue
+    const names = byCap.get(n) ?? []
+    if (!names.includes(serviceName(c.service))) names.push(serviceName(c.service))
+    byCap.set(n, names)
+  }
+  return (
+    <section className="crew-attach" aria-labelledby="crew-attach-head">
+      <p id="crew-attach-head" className="crew-caption crew-fine">Attached to your post</p>
+      <ul className="crew-attach-strip" aria-label="Attached to your post">
+        {items.map((it, i) => (
+          <li key={`${it.url}-${i}`} className={it.card ? 'crew-attach-card' : undefined}>
+            <SafeImg src={it.url} alt={it.alt} goneClassName="crew-attach-gone" />
+          </li>
+        ))}
+      </ul>
+      {skipped > 0 && (
+        <p className="crew-note crew-fine">{`Bluesky skips ${skipped} ${skipped === 1 ? 'image' : 'images'} over 1 MB.`}</p>
+      )}
+      {[...byCap].map(([n, names]) => (
+        <p key={n} className="crew-note crew-fine">
+          {`${listNames(names)} ${names.length > 1 ? 'get' : 'gets'} the first ${n}.`}
+        </p>
+      ))}
+    </section>
   )
 }
 
@@ -243,7 +286,7 @@ export default function Approve() {
     setMessage('')
     try {
       const r = await post(memberId, token, picks.map((d) => ({
-        channelId: d.channelId, text: texts.current[d.id] ?? d.text, timing, assetUrl: invite?.card?.url ?? '',
+        channelId: d.channelId, text: texts.current[d.id] ?? d.text, timing, attach: true,
       })))
       const all = { ...outcomes, ...Object.fromEntries(r.outcomes.map((o) => [o.channelId, o])) }
       setOutcomes(all)
@@ -329,6 +372,7 @@ export default function Approve() {
         )
       )}
       <div className="perf perf-h crew-perf" aria-hidden="true" />
+      {invite && <Attached invite={invite} channels={channels.filter((c) => checked[c.id])} />}
       {message && <Alert tone="error">{message}</Alert>}
       <div className="crew-stack" aria-busy={!data || undefined}>
         {!data ? (

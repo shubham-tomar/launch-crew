@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -43,6 +44,9 @@ func NewCaptain(deps launch.Deps, sessions *session.Store) http.Handler {
 		r.Post("/retry/{jobID}", c.retry)
 		r.Post("/channels/refresh", c.refreshChannels)
 		r.Post("/crew/{memberID}/retry-comment", c.retryComment)
+		r.Post("/images", c.addImage)
+		r.Delete("/images/{imageID}", c.removeImage)
+		r.Put("/images/order", c.orderImages)
 	})
 	r.Get("/repos", c.repos)
 	r.Patch("/repos/{id}", c.patchRepo)
@@ -115,6 +119,14 @@ func (c *Captain) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusBadRequest, "hero_refused", "that image address cannot be used, try another public image URL under 5 MB")
 	case errors.Is(err, trigger.ErrHeroNotImage):
 		writeError(w, http.StatusBadRequest, "hero_not_image", "that URL is not an image")
+	case errors.Is(err, launch.ErrTooBig):
+		writeError(w, http.StatusRequestEntityTooLarge, "too_large", imageTooLarge)
+	case errors.Is(err, launch.ErrImageNotImage):
+		writeError(w, http.StatusBadRequest, "not_image", "Use a JPEG, PNG, GIF or WebP image.")
+	case errors.Is(err, launch.ErrTooManyImages):
+		writeError(w, http.StatusBadRequest, "too_many_images", "A launch can have up to 10 images.")
+	case errors.Is(err, launch.ErrImagesLocked):
+		writeError(w, http.StatusConflict, "images_locked", "Images are locked once the launch is out.")
 	case errors.Is(err, launch.ErrNotDraft):
 		writeError(w, http.StatusConflict, "not_draft", "this launch has gone out and can no longer be edited")
 	case errors.As(err, new(*launch.PreflightError)):
@@ -204,6 +216,76 @@ func (c *Captain) patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c.writeDetail(w, r, launchID(r), http.StatusOK)
+}
+
+const imageTooLarge = "Each image can be up to 10 MB."
+
+// addImage takes a multipart form with one file field, image, and appends
+// it to the launch's images. The body is capped a little above the image
+// limit so the multipart framing fits; the file itself must be within it.
+func (c *Captain) addImage(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, launch.MaxImageBytes+1<<20)
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		if errors.As(err, new(*http.MaxBytesError)) {
+			writeError(w, http.StatusRequestEntityTooLarge, "too_large", imageTooLarge)
+			return
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", "send the image as a multipart form field named image")
+		return
+	}
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
+	f, hdr, err := r.FormFile("image")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "send the image as a multipart form field named image")
+		return
+	}
+	defer f.Close()
+	if hdr.Size > launch.MaxImageBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "too_large", imageTooLarge)
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(f, launch.MaxImageBytes+1))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "the image could not be read")
+		return
+	}
+	if len(data) > launch.MaxImageBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "too_large", imageTooLarge)
+		return
+	}
+	img, err := launch.AddImage(r.Context(), c.deps, launchID(r), data)
+	if err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, img)
+}
+
+func (c *Captain) removeImage(w http.ResponseWriter, r *http.Request) {
+	imageID, err := uuid.Parse(chi.URLParam(r, "imageID"))
+	if err != nil {
+		notFound(w, r)
+		return
+	}
+	if err := launch.RemoveImage(r.Context(), c.deps, launchID(r), imageID); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (c *Captain) orderImages(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		IDs []uuid.UUID `json:"ids"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if err := launch.ReorderImages(r.Context(), c.deps, launchID(r), body.IDs); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (c *Captain) editDraft(w http.ResponseWriter, r *http.Request) {

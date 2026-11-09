@@ -119,6 +119,10 @@ type DetailView struct {
 	QRLogoURL string `json:"qrLogoUrl"`
 	// CardURL is the release card the captain's posts carry when there is no hero.
 	CardURL string `json:"cardUrl"`
+	// Images are the captain's uploads, in posting order; IncludeCard says
+	// whether the card slot (hero, else release card) goes first.
+	Images      []LaunchImage `json:"images"`
+	IncludeCard bool          `json:"includeCard"`
 }
 
 // Detail builds the launch page. For a draft it first adds any missing
@@ -137,6 +141,14 @@ func Detail(ctx context.Context, d Deps, id uuid.UUID) (DetailView, error) {
 		Roles: rolesOf(l), BufferConnected: s.conn != nil,
 		Headlines: []Change{}, Chores: []Change{}, CaptainDrafts: []CaptainDraftView{},
 		Crew: []CrewRow{}, Checks: []CheckView{}, DeadLetters: []DeadLetter{},
+		Images: []LaunchImage{}, IncludeCard: l.IncludeCard,
+	}
+	imgs, err := d.Q.ListLaunchImages(ctx, l.ID)
+	if err != nil {
+		return DetailView{}, fmt.Errorf("launch: list images: %w", err)
+	}
+	for _, a := range imgs {
+		v.Images = append(v.Images, imageOf(a))
 	}
 	v.CaptainName = captainName(s)
 	v.QRLogo, v.QRLogoURL = qrLogoOf(ctx, d, l.ID)

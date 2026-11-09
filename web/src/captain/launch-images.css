@@ -1,0 +1,201 @@
+/* Launch images: a grid of square thumbnails, a dashed tile to add more, and the card switch above. */
+
+.li {
+  display: grid;
+  gap: var(--space-ms);
+}
+
+.li-locked {
+  margin: 0;
+}
+
+.li-problem {
+  display: block;
+}
+
+.li-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.li-tile {
+  position: relative;
+  display: grid;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--rounded-md);
+  background-color: var(--color-tint);
+}
+
+.li-tile img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.li-tile-dragging {
+  opacity: 0.5;
+}
+
+.li-num {
+  position: absolute;
+  inset-block-start: var(--space-sm);
+  inset-inline-start: var(--space-sm);
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 1.5rem;
+  block-size: 1.5rem;
+  padding-inline: var(--space-xs);
+  border-radius: var(--rounded-full);
+  background-color: color-mix(in srgb, var(--color-text) 72%, transparent);
+  color: var(--color-surface);
+  font-family: var(--font-mono);
+  font-size: var(--type-mono-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.li-gone {
+  block-size: 100%;
+}
+
+/* Controls sit along the bottom edge; 36px squares so three fit on a 104px tile. */
+.li-controls {
+  position: absolute;
+  inset-block-end: var(--space-xs);
+  inset-inline: var(--space-xs);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-xs);
+}
+
+.li-ctl.btn-icon {
+  inline-size: 32px;
+  min-inline-size: 32px;
+  block-size: 32px;
+  min-height: 32px;
+  border-radius: var(--rounded-mark);
+  background-color: color-mix(in srgb, var(--color-surface) 88%, transparent);
+}
+
+.li-ctl svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+/* The grid reads left to right, so earlier points left and later points right. */
+.li-earlier svg {
+  transform: rotate(90deg);
+}
+
+.li-later svg {
+  transform: rotate(-90deg);
+}
+
+.li-remove {
+  margin-inline-start: auto;
+}
+
+/* Pending: the file's name over a progress bar, or over its error and a Remove button. */
+.li-pending {
+  align-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  text-align: center;
+}
+
+.li-pending-name {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--type-mono-size);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.li-pending-error {
+  color: var(--color-error);
+  font-size: var(--type-mono-size);
+}
+
+.li-failed {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-error) 40%, transparent);
+}
+
+.li-bar {
+  display: block;
+  block-size: 6px;
+  overflow: hidden;
+  border-radius: var(--rounded-full);
+  background-color: var(--color-hairline);
+}
+
+.li-bar-fill {
+  display: block;
+  block-size: 100%;
+  border-radius: var(--rounded-full);
+  background-color: var(--color-accent);
+  transition: inline-size 160ms;
+}
+
+.li-dismiss {
+  min-height: 32px;
+  padding-inline: var(--space-sm);
+  font-size: var(--type-small-size);
+}
+
+/* The add tile: dashed hairline, accent on hover and focus, also a drop zone. */
+.li-add {
+  border-width: 1px;
+  border-style: dashed;
+  border-color: var(--color-hairline);
+  background-color: transparent;
+  color: var(--color-text-muted);
+}
+
+.li-add:hover,
+.li-add-over,
+.li-add:has(input:focus-visible) {
+  border-color: var(--color-accent);
+  background-color: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
+.li-add-label {
+  position: relative;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-xs);
+  block-size: 100%;
+  padding: var(--space-sm);
+  cursor: pointer;
+  text-align: center;
+}
+
+.li-add-label input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.li-add-label svg {
+  inline-size: 24px;
+  block-size: 24px;
+}
+
+.li-add-text {
+  font-size: var(--type-small-size);
+  font-weight: 600;
+}
+
+.li-add-hint {
+  font-size: var(--type-mono-size);
+}

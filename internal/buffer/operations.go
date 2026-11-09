@@ -36,6 +36,13 @@ func RemindersOnly(ch Channel) bool {
 type ServiceRules struct {
 	MaxChars                       int
 	Threads, ImageOK, FirstComment bool
+	// MaxImages is how many images one post takes; 0 when ImageOK is false.
+	// MaxImageBytes is the network's per-image size that Buffer cannot
+	// resize down to (Bluesky); 0 where Buffer makes a smaller copy itself.
+	// Buffer's configuration query reports neither, so both always come
+	// from the built-in table.
+	MaxImages     int
+	MaxImageBytes int
 }
 
 // Config holds rules keyed by lowercase Buffer service name (twitter, bluesky, ...).
@@ -173,19 +180,22 @@ func (c *Client) saveCache(ctx context.Context, connID uuid.UUID, v any, save fu
 }
 
 // builtinRules come from Buffer's character-limits and posts guides
-// (2026-11-01). They fill whatever the configuration query leaves out.
+// (2026-11-01) and its media guides (images per post and sizes, checked
+// 2026-11-09). They fill whatever the configuration query leaves out.
+// Buffer refuses files over 10 MB and makes a smaller copy for networks
+// with lower limits, except Bluesky's 1 MB, which it cannot shrink to.
 var builtinRules = map[string]ServiceRules{
-	"twitter":        {MaxChars: 280, Threads: true, ImageOK: true},
-	"bluesky":        {MaxChars: 300, Threads: true, ImageOK: true},
-	"threads":        {MaxChars: 500, Threads: true, ImageOK: true},
-	"mastodon":       {MaxChars: 500, Threads: true, ImageOK: true},
-	"linkedin":       {MaxChars: 3000, ImageOK: true, FirstComment: true},
-	"facebook":       {MaxChars: 5000, ImageOK: true, FirstComment: true},
-	"instagram":      {MaxChars: 2196, ImageOK: true, FirstComment: true},
+	"twitter":        {MaxChars: 280, Threads: true, ImageOK: true, MaxImages: 4},
+	"bluesky":        {MaxChars: 300, Threads: true, ImageOK: true, MaxImages: 4, MaxImageBytes: 1_000_000},
+	"threads":        {MaxChars: 500, Threads: true, ImageOK: true, MaxImages: 4},
+	"mastodon":       {MaxChars: 500, Threads: true, ImageOK: true, MaxImages: 4},
+	"linkedin":       {MaxChars: 3000, ImageOK: true, FirstComment: true, MaxImages: 20},
+	"facebook":       {MaxChars: 5000, ImageOK: true, FirstComment: true, MaxImages: 10},
+	"instagram":      {MaxChars: 2196, ImageOK: true, FirstComment: true, MaxImages: 20},
 	"youtube":        {MaxChars: 5000},
-	"tiktok":         {MaxChars: 2200, ImageOK: true},
-	"pinterest":      {MaxChars: 500, ImageOK: true},
-	"googlebusiness": {MaxChars: 4000, ImageOK: true},
+	"tiktok":         {MaxChars: 2200, ImageOK: true, MaxImages: 10},
+	"pinterest":      {MaxChars: 500, ImageOK: true, MaxImages: 1},
+	"googlebusiness": {MaxChars: 4000, ImageOK: true, MaxImages: 1},
 }
 
 type serviceConfig struct {
@@ -290,8 +300,11 @@ func buildConfig(services []serviceConfig) Config {
 		}
 		if r.MaxChars == 0 {
 			r.MaxChars = b.MaxChars
-			got[name] = r
 		}
+		if r.ImageOK {
+			r.MaxImages, r.MaxImageBytes = b.MaxImages, b.MaxImageBytes
+		}
+		got[name] = r
 	}
 	return Config{Services: got}
 }

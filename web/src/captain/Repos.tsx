@@ -5,6 +5,7 @@ import Alert from '../components/Alert'
 import Button from '../components/Button'
 import Select from '../components/Select'
 import { SkeletonPanel } from '../components/Skeleton'
+import Switch from '../components/Switch'
 import Frame from './Frame'
 import { asError } from './format'
 import './repos.css'
@@ -23,27 +24,6 @@ const repoIcon = (
     <path d="M5 14.5A1.5 1.5 0 0 1 6.5 13H15" />
   </svg>
 )
-
-type SwitchProps = { label: string; name: string; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }
-
-function Switch({ label, name, checked, disabled, onChange }: SwitchProps) {
-  return (
-    <label className="rp-switch">
-      <input
-        type="checkbox"
-        role="switch"
-        checked={checked}
-        disabled={disabled}
-        aria-label={`${name}: ${label.toLowerCase()}`}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <span className="rp-track" aria-hidden="true">
-        <span className="rp-thumb" />
-      </span>
-      <span className="rp-switch-text">{label}</span>
-    </label>
-  )
-}
 
 export default function Repos() {
   const [repos, setRepos] = useState<Repo[]>()

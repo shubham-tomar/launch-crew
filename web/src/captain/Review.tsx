@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Button from '../components/Button'
+import SafeImg from '../components/SafeImg'
 import Icon from '../components/Icon'
 import IconButton from '../components/IconButton'
 import ServiceIcon from '../components/ServiceIcon'
@@ -246,7 +247,7 @@ export default function Review({ detail, pending, onHidden, onEditDraft, onSkipD
               <span>Release card</span>
               <Icon name="chevron" className="cap-card-chevron" />
             </summary>
-            <img className="cap-card-img" src={detail.cardUrl} alt={`Release card for ${detail.title}`} loading="lazy" />
+            <SafeImg className="cap-card-img" goneClassName="cap-card-gone" src={detail.cardUrl} alt={`Release card for ${detail.title}`} loading="lazy" />
           </details>
         )}
         {editable && posts.length > 0 && (

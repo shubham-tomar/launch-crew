@@ -25,6 +25,8 @@ import (
 // CardStore uploads a rendered card; *cards.Uploader is one.
 type CardStore interface {
 	Put(ctx context.Context, png []byte) (url, sha string, err error)
+	// PutCard stores a card with its size and, over Bluesky's limit, a small copy.
+	PutCard(ctx context.Context, png []byte) (cards.Stored, error)
 }
 
 // ReleaseDeps are what ReleaseJob needs. Render defaults to cards.Render.
@@ -243,11 +245,13 @@ func (d ReleaseDeps) save(ctx context.Context, render func(any, cards.Preset) ([
 	if err != nil {
 		return fmt.Errorf("render release card: %w", err)
 	}
-	url, sha, err := d.Cards.Put(ctx, png)
+	st, err := d.Cards.PutCard(ctx, png)
 	if err != nil {
 		return fmt.Errorf("upload release card: %w", err)
 	}
-	if _, err := q.InsertLaunchAsset(ctx, sqlc.InsertLaunchAssetParams{LaunchID: l.ID, Kind: "release", R2Url: url, Sha: sha}); err != nil {
+	if _, err := q.InsertLaunchAsset(ctx, sqlc.InsertLaunchAssetParams{
+		LaunchID: l.ID, Kind: "release", R2Url: st.URL, Sha: st.Sha, Bytes: st.Bytes, SmallUrl: st.Small,
+	}); err != nil {
 		return err
 	}
 	if err := q.SetLaunchCardPreset(ctx, sqlc.SetLaunchCardPresetParams{ID: l.ID, CardPreset: pgtype.Int2{Int16: presetIndex(preset), Valid: true}}); err != nil {

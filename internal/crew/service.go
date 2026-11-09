@@ -65,6 +65,18 @@ const (
 type AssetView struct {
 	URL string `json:"url"`
 	Alt string `json:"alt"`
+	// Bytes and Small are for the posting code: the file's size and its
+	// copy under Bluesky's limit, when it has one.
+	Bytes int64  `json:"-"`
+	Small string `json:"-"`
+}
+
+// image is the asset as the posting code attaches it.
+func (a *AssetView) image() Image {
+	if a == nil {
+		return Image{}
+	}
+	return Image{URL: a.URL, Bytes: a.Bytes, Small: a.Small}
 }
 
 // LaunchSummary is the launch as the invite page shows it.
@@ -108,6 +120,17 @@ type View struct {
 	// connection that belongs to this member; the page offers Continue instead
 	// of sending them through Buffer's consent again. Set by the API.
 	Connected bool `json:"connected"`
+	// Images are the captain's uploads every post carries, in order;
+	// IncludeCard says whether the card slot leads them.
+	Images      []ImageView `json:"images"`
+	IncludeCard bool        `json:"includeCard"`
+}
+
+// ImageView is one launch image on the invite: the original, and what a
+// Bluesky post gets (the original, a copy under 1 MB, or nothing).
+type ImageView struct {
+	URL     string `json:"url"`
+	Bluesky string `json:"bluesky"`
 }
 
 // LaunchView is the public open-link page.
@@ -349,7 +372,24 @@ func releaseCard(ctx context.Context, d Deps, info launchInfo) *AssetView {
 	if h := info.headline(); h != "" {
 		alt += ": " + h
 	}
-	return &AssetView{URL: a.R2Url, Alt: alt}
+	return &AssetView{URL: a.R2Url, Alt: alt, Bytes: a.Bytes, Small: a.SmallUrl}
+}
+
+// blueskyMaxBytes mirrors the Bluesky per-image limit in the posting rules.
+const blueskyMaxBytes = 1_000_000
+
+// willAttach reports whether the member's posts would carry any image: the
+// card when the launch includes it, else any of the launch's images.
+func willAttach(ctx context.Context, d Deps, info launchInfo, m sqlc.CrewMember) bool {
+	if info.l.IncludeCard && cardFor(ctx, d, info, m, "") != nil {
+		return true
+	}
+	n, err := d.Q.CountLaunchImages(ctx, info.l.ID)
+	if err != nil {
+		log.Printf("crew: count images for %s: %v", info.l.ID, err)
+		return false
+	}
+	return n > 0
 }
 
 // cardFor is the contributor card for a verified member, else the release card.
@@ -362,7 +402,7 @@ func cardFor(ctx context.Context, d Deps, info launchInfo, m sqlc.CrewMember, na
 			} else if m.PrTitle.String != "" {
 				alt += ": " + m.PrTitle.String
 			}
-			return &AssetView{URL: a.R2Url, Alt: alt}
+			return &AssetView{URL: a.R2Url, Alt: alt, Bytes: a.Bytes, Small: a.SmallUrl}
 		}
 	}
 	return releaseCard(ctx, d, info)
@@ -451,11 +491,20 @@ func inviteView(ctx context.Context, d Deps, info launchInfo, m sqlc.CrewMember)
 		preview = templatePreview(ctx, d, info, m)
 	}
 	verified := m.UserID.Valid
+	images := []ImageView{}
+	if rows, err := d.Q.ListLaunchImages(ctx, info.l.ID); err != nil {
+		log.Printf("crew: images for %s: %v", info.l.ID, err)
+	} else {
+		for _, img := range ImagesOf(rows) {
+			images = append(images, ImageView{URL: img.URL, Bluesky: img.forBytes(blueskyMaxBytes)})
+		}
+	}
 	return View{
 		Launch: summaryOf(d, info),
 		Member: MemberSummary{ID: m.ID, Name: name, Role: m.Role, RoleHint: m.RoleHint, State: m.State, Verified: verified},
 		Card:   cardFor(ctx, d, info, m, name), Preview: preview, Verified: verified, CopyText: preview,
 		NeedsVerify: unverified(m),
+		Images:      images, IncludeCard: info.l.IncludeCard,
 	}
 }
 
@@ -829,7 +878,10 @@ func approve(ctx context.Context, d Deps, info launchInfo, m sqlc.CrewMember, co
 			if err != nil {
 				log.Printf("crew: configuration for %s: %v", m.ID, err)
 			}
-			hasImage := cardFor(ctx, d, info, m, "") != nil
+			// A channel that needs an image (Instagram) is offered only when a
+			// post would carry one: the card when the launch includes it, or
+			// any of the launch's images.
+			hasImage := willAttach(ctx, d, info, m)
 			inserted := 0
 			for _, ch := range chs {
 				ok, reason := buffer.Eligible(ch, cfg, hasImage)
@@ -1022,8 +1074,8 @@ func MarkCopied(ctx context.Context, d Deps, memberID uuid.UUID) error {
 }
 
 // Post runs PostAll and moves the member to queued when a post was queued.
-// A selection asking for an image gets the member's card, never a URL
-// from the caller.
+// A selection asking for images gets the member's own card; the images
+// themselves are read by the posting job as it sends.
 func Post(ctx context.Context, d Deps, memberID uuid.UUID, sels []Selection) ([]Outcome, error) {
 	m, err := getMember(ctx, d, memberID)
 	if err != nil {
@@ -1033,15 +1085,10 @@ func Post(ctx context.Context, d Deps, memberID uuid.UUID, sels []Selection) ([]
 	if err != nil {
 		return nil, err
 	}
-	card := ""
-	if c := cardFor(ctx, d, info, m, ""); c != nil {
-		card = c.URL
-	}
+	card := cardFor(ctx, d, info, m, "").image()
 	sels = append([]Selection(nil), sels...)
 	for i := range sels {
-		if sels[i].AssetURL != "" {
-			sels[i].AssetURL = card
-		}
+		sels[i].Card = card
 	}
 	out, err := PostAll(ctx, d, memberID, sels)
 	if err != nil {

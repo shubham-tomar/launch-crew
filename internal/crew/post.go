@@ -56,7 +56,12 @@ type Selection struct {
 	ChannelID string `json:"channelId"`
 	Text      string `json:"text"`
 	Timing    Timing `json:"timing"`
-	AssetURL  string `json:"assetUrl"`
+	// Attach asks for the launch's images: the member's card, then the
+	// captain's uploads. What goes out is resolved when the post is made,
+	// never from what the page showed when the person approved.
+	Attach bool `json:"attach"`
+	// Card is the member's card slot, filled in by Post; a caller cannot set it.
+	Card Image `json:"-"`
 }
 
 // Outcome is what happened on one channel.
@@ -393,12 +398,19 @@ func (p *poster) attempt(ctx context.Context, j *job) Outcome {
 		log.Printf("crew: recent texts for %s: %v", p.launch.ID, err)
 		return j.fail(noteOurs)
 	}
+	// Resolved now, not when the person approved: an image the captain
+	// removed since is not sent, one they added since is.
+	assets, err := p.attachments(ctx, j)
+	if err != nil {
+		log.Printf("crew: images for %s: %v", p.launch.ID, err)
+		return j.fail(noteOurs)
+	}
 	checks, ok := preflight.ForCrewDraft(ctx, p.deps.Preflight, preflight.CrewDraft{
 		Draft: preflight.Draft{
 			ChannelID: ch.ID, Service: ch.Service, Network: j.network, Name: ch.Name,
-			Text: j.text, Thread: j.thread, FirstComment: j.firstComment, HasAsset: j.sel.AssetURL != "",
+			Text: j.text, Thread: j.thread, FirstComment: j.firstComment, HasAsset: len(assets) > 0,
 		},
-		ConnectionID: p.connID, AssetURL: j.sel.AssetURL, LaunchAt: p.launch.LaunchAt.Time,
+		ConnectionID: p.connID, AssetURLs: assets, LaunchAt: p.launch.LaunchAt.Time,
 	}, recent)
 	if !ok {
 		for _, c := range checks {
@@ -418,9 +430,7 @@ func (p *poster) attempt(ctx context.Context, j *job) Outcome {
 	case TimingDraft:
 		in.SaveToDraft = true
 	}
-	if j.rules.ImageOK && j.sel.AssetURL != "" {
-		in.AssetURLs = []string{j.sel.AssetURL}
-	}
+	in.AssetURLs = assets
 
 	// Record what is about to be sent, so a later tap can look for it.
 	j.sentText = pgtype.Text{String: j.text, Valid: true}
@@ -455,6 +465,22 @@ func (p *poster) attempt(ctx context.Context, j *job) Outcome {
 	// Buffer may have created the post before the answer was lost.
 	log.Printf("crew: createPost %s/%s unclear, looking it up: %v", p.member.ID, ch.ID, err)
 	return p.recoverPost(ctx, j)
+}
+
+// attachments is what this post carries: nothing when the selection asked
+// for no image or the network takes none; else the member's card (when the
+// launch includes the card slot) and the launch's current images, cut to
+// the network's limit. sel.AssetURL carries the intent: Post sets it to the
+// card, or to an image when the member has no card.
+func (p *poster) attachments(ctx context.Context, j *job) ([]string, error) {
+	if !j.sel.Attach || !j.rules.ImageOK {
+		return nil, nil
+	}
+	rows, err := p.deps.Q.ListLaunchImages(ctx, p.launch.ID)
+	if err != nil {
+		return nil, err
+	}
+	return Attachments(j.sel.Card, p.launch.IncludeCard, ImagesOf(rows), j.rules.MaxImages, j.rules.MaxImageBytes), nil
 }
 
 // fit sets the text, thread and first comment to send and reports whether

@@ -8,7 +8,7 @@ const detail = (over: Partial<Detail> = {}): Detail => ({
   launchAt: new Date(Date.now() + 3 * 3600_000).toISOString(), windowMinutes: 90, crewCap: 200, openCount: 0,
   openUrl: '', showUrl: '', pngUrl: '', roles: [], bufferConnected: true, headlines: [], chores: [],
   captainDrafts: [], crew: [], checks: [], deadLetters: [], counts: { in: 0, total: 0 },
-  captainName: 'Shubham Tomar', qrLogo: 'plane', qrLogoUrl: '', ...over,
+  captainName: 'Shubham Tomar', qrLogo: 'plane', qrLogoUrl: '', images: [], includeCard: true, ...over,
 })
 
 afterEach(() => vi.useRealTimers())

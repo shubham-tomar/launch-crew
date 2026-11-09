@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import Icon from '../components/Icon'
 import IconButton from '../components/IconButton'
+import SafeImg from '../components/SafeImg'
 import ServiceIcon from '../components/ServiceIcon'
 import { serviceName } from '../crew/format'
 import type { CrewPost, CrewRow, Detail } from '../api'
@@ -134,7 +135,7 @@ export default function Crew({ detail, pending, onTicked, onRetryComment }: Prop
                   <span>Card</span>
                   <Icon name="chevron" className="cap-card-chevron" />
                 </summary>
-                <img className="cap-card-img" src={c.cardUrl} alt={`Contributor card for ${c.name}`} loading="lazy" />
+                <SafeImg className="cap-card-img" goneClassName="cap-card-gone" src={c.cardUrl} alt={`Contributor card for ${c.name}`} loading="lazy" />
               </details>
             )}
             {c.commentFailed && (

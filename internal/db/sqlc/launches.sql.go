@@ -12,12 +12,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countLaunchImages = `-- name: CountLaunchImages :one
+SELECT count(*) FROM launch_assets WHERE launch_id = $1 AND kind = 'image'
+`
+
+func (q *Queries) CountLaunchImages(ctx context.Context, launchID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countLaunchImages, launchID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createLaunch = `-- name: CreateLaunch :one
 INSERT INTO launches
     (owner_user_id, repo_id, source, title, summary, release_tag, release_url,
      headline_changes, roles, launch_at, window_minutes, crew_cap, card_preset, template_id)
 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-RETURNING id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id
+RETURNING id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card
 `
 
 type CreateLaunchParams struct {
@@ -80,12 +91,30 @@ func (q *Queries) CreateLaunch(ctx context.Context, arg CreateLaunchParams) (Lau
 		&i.QrLogo,
 		&i.CaptainNotified,
 		&i.TemplateID,
+		&i.IncludeCard,
 	)
 	return i, err
 }
 
+const deleteLaunchImage = `-- name: DeleteLaunchImage :execrows
+DELETE FROM launch_assets WHERE id = $1 AND launch_id = $2 AND kind = 'image'
+`
+
+type DeleteLaunchImageParams struct {
+	ID       uuid.UUID `json:"id"`
+	LaunchID uuid.UUID `json:"launch_id"`
+}
+
+func (q *Queries) DeleteLaunchImage(ctx context.Context, arg DeleteLaunchImageParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteLaunchImage, arg.ID, arg.LaunchID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getLatestLaunchAssetByKind = `-- name: GetLatestLaunchAssetByKind :one
-SELECT id, launch_id, kind, r2_url, sha FROM launch_assets WHERE launch_id = $1 AND kind = $2 ORDER BY id DESC LIMIT 1
+SELECT id, launch_id, kind, r2_url, sha, position, bytes, small_url FROM launch_assets WHERE launch_id = $1 AND kind = $2 ORDER BY id DESC LIMIT 1
 `
 
 type GetLatestLaunchAssetByKindParams struct {
@@ -102,12 +131,15 @@ func (q *Queries) GetLatestLaunchAssetByKind(ctx context.Context, arg GetLatestL
 		&i.Kind,
 		&i.R2Url,
 		&i.Sha,
+		&i.Position,
+		&i.Bytes,
+		&i.SmallUrl,
 	)
 	return i, err
 }
 
 const getLaunch = `-- name: GetLaunch :one
-SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id FROM launches WHERE id = $1
+SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card FROM launches WHERE id = $1
 `
 
 func (q *Queries) GetLaunch(ctx context.Context, id uuid.UUID) (Launch, error) {
@@ -138,12 +170,13 @@ func (q *Queries) GetLaunch(ctx context.Context, id uuid.UUID) (Launch, error) {
 		&i.QrLogo,
 		&i.CaptainNotified,
 		&i.TemplateID,
+		&i.IncludeCard,
 	)
 	return i, err
 }
 
 const getLaunchAsset = `-- name: GetLaunchAsset :one
-SELECT id, launch_id, kind, r2_url, sha FROM launch_assets WHERE id = $1
+SELECT id, launch_id, kind, r2_url, sha, position, bytes, small_url FROM launch_assets WHERE id = $1
 `
 
 func (q *Queries) GetLaunchAsset(ctx context.Context, id uuid.UUID) (LaunchAsset, error) {
@@ -155,12 +188,15 @@ func (q *Queries) GetLaunchAsset(ctx context.Context, id uuid.UUID) (LaunchAsset
 		&i.Kind,
 		&i.R2Url,
 		&i.Sha,
+		&i.Position,
+		&i.Bytes,
+		&i.SmallUrl,
 	)
 	return i, err
 }
 
 const getLaunchByOpenTokenHash = `-- name: GetLaunchByOpenTokenHash :one
-SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id FROM launches WHERE open_token_hash = $1
+SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card FROM launches WHERE open_token_hash = $1
 `
 
 func (q *Queries) GetLaunchByOpenTokenHash(ctx context.Context, openTokenHash []byte) (Launch, error) {
@@ -191,12 +227,13 @@ func (q *Queries) GetLaunchByOpenTokenHash(ctx context.Context, openTokenHash []
 		&i.QrLogo,
 		&i.CaptainNotified,
 		&i.TemplateID,
+		&i.IncludeCard,
 	)
 	return i, err
 }
 
 const getLaunchByRepoAndTag = `-- name: GetLaunchByRepoAndTag :one
-SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id FROM launches WHERE repo_id = $1 AND release_tag = $2 LIMIT 1
+SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card FROM launches WHERE repo_id = $1 AND release_tag = $2 LIMIT 1
 `
 
 type GetLaunchByRepoAndTagParams struct {
@@ -232,6 +269,7 @@ func (q *Queries) GetLaunchByRepoAndTag(ctx context.Context, arg GetLaunchByRepo
 		&i.QrLogo,
 		&i.CaptainNotified,
 		&i.TemplateID,
+		&i.IncludeCard,
 	)
 	return i, err
 }
@@ -273,7 +311,7 @@ func (q *Queries) IncrementLaunchOpenCount(ctx context.Context, id uuid.UUID) (i
 }
 
 const insertLaunchAsset = `-- name: InsertLaunchAsset :one
-INSERT INTO launch_assets (launch_id, kind, r2_url, sha) VALUES ($1, $2, $3, $4) RETURNING id, launch_id, kind, r2_url, sha
+INSERT INTO launch_assets (launch_id, kind, r2_url, sha, bytes, small_url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, launch_id, kind, r2_url, sha, position, bytes, small_url
 `
 
 type InsertLaunchAssetParams struct {
@@ -281,6 +319,8 @@ type InsertLaunchAssetParams struct {
 	Kind     string    `json:"kind"`
 	R2Url    string    `json:"r2_url"`
 	Sha      string    `json:"sha"`
+	Bytes    int64     `json:"bytes"`
+	SmallUrl string    `json:"small_url"`
 }
 
 func (q *Queries) InsertLaunchAsset(ctx context.Context, arg InsertLaunchAssetParams) (LaunchAsset, error) {
@@ -289,6 +329,8 @@ func (q *Queries) InsertLaunchAsset(ctx context.Context, arg InsertLaunchAssetPa
 		arg.Kind,
 		arg.R2Url,
 		arg.Sha,
+		arg.Bytes,
+		arg.SmallUrl,
 	)
 	var i LaunchAsset
 	err := row.Scan(
@@ -297,6 +339,47 @@ func (q *Queries) InsertLaunchAsset(ctx context.Context, arg InsertLaunchAssetPa
 		&i.Kind,
 		&i.R2Url,
 		&i.Sha,
+		&i.Position,
+		&i.Bytes,
+		&i.SmallUrl,
+	)
+	return i, err
+}
+
+const insertLaunchImage = `-- name: InsertLaunchImage :one
+INSERT INTO launch_assets (launch_id, kind, r2_url, sha, position, bytes, small_url)
+VALUES ($1, 'image', $2, $3,
+    (SELECT COALESCE(MAX(position), 0) + 1 FROM launch_assets WHERE launch_id = $1 AND kind = 'image'),
+    $4, $5)
+RETURNING id, launch_id, kind, r2_url, sha, position, bytes, small_url
+`
+
+type InsertLaunchImageParams struct {
+	LaunchID uuid.UUID `json:"launch_id"`
+	R2Url    string    `json:"r2_url"`
+	Sha      string    `json:"sha"`
+	Bytes    int64     `json:"bytes"`
+	SmallUrl string    `json:"small_url"`
+}
+
+func (q *Queries) InsertLaunchImage(ctx context.Context, arg InsertLaunchImageParams) (LaunchAsset, error) {
+	row := q.db.QueryRow(ctx, insertLaunchImage,
+		arg.LaunchID,
+		arg.R2Url,
+		arg.Sha,
+		arg.Bytes,
+		arg.SmallUrl,
+	)
+	var i LaunchAsset
+	err := row.Scan(
+		&i.ID,
+		&i.LaunchID,
+		&i.Kind,
+		&i.R2Url,
+		&i.Sha,
+		&i.Position,
+		&i.Bytes,
+		&i.SmallUrl,
 	)
 	return i, err
 }
@@ -366,8 +449,41 @@ func (q *Queries) ListLaunchAssetURLs(ctx context.Context, launchID uuid.UUID) (
 	return items, nil
 }
 
+const listLaunchImages = `-- name: ListLaunchImages :many
+SELECT id, launch_id, kind, r2_url, sha, position, bytes, small_url FROM launch_assets WHERE launch_id = $1 AND kind = 'image' ORDER BY position, id
+`
+
+func (q *Queries) ListLaunchImages(ctx context.Context, launchID uuid.UUID) ([]LaunchAsset, error) {
+	rows, err := q.db.Query(ctx, listLaunchImages, launchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LaunchAsset
+	for rows.Next() {
+		var i LaunchAsset
+		if err := rows.Scan(
+			&i.ID,
+			&i.LaunchID,
+			&i.Kind,
+			&i.R2Url,
+			&i.Sha,
+			&i.Position,
+			&i.Bytes,
+			&i.SmallUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLaunchesByOwner = `-- name: ListLaunchesByOwner :many
-SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id FROM launches
+SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card FROM launches
 WHERE owner_user_id = $1 AND status <> 'deleted'
 ORDER BY created_at DESC
 `
@@ -406,6 +522,7 @@ func (q *Queries) ListLaunchesByOwner(ctx context.Context, ownerUserID uuid.Null
 			&i.QrLogo,
 			&i.CaptainNotified,
 			&i.TemplateID,
+			&i.IncludeCard,
 		); err != nil {
 			return nil, err
 		}
@@ -439,6 +556,35 @@ type SetLaunchCardPresetParams struct {
 
 func (q *Queries) SetLaunchCardPreset(ctx context.Context, arg SetLaunchCardPresetParams) error {
 	_, err := q.db.Exec(ctx, setLaunchCardPreset, arg.ID, arg.CardPreset)
+	return err
+}
+
+const setLaunchImagePosition = `-- name: SetLaunchImagePosition :exec
+UPDATE launch_assets SET position = $3 WHERE id = $1 AND launch_id = $2 AND kind = 'image'
+`
+
+type SetLaunchImagePositionParams struct {
+	ID       uuid.UUID   `json:"id"`
+	LaunchID uuid.UUID   `json:"launch_id"`
+	Position pgtype.Int2 `json:"position"`
+}
+
+func (q *Queries) SetLaunchImagePosition(ctx context.Context, arg SetLaunchImagePositionParams) error {
+	_, err := q.db.Exec(ctx, setLaunchImagePosition, arg.ID, arg.LaunchID, arg.Position)
+	return err
+}
+
+const setLaunchIncludeCard = `-- name: SetLaunchIncludeCard :exec
+UPDATE launches SET include_card = $2 WHERE id = $1
+`
+
+type SetLaunchIncludeCardParams struct {
+	ID          uuid.UUID `json:"id"`
+	IncludeCard bool      `json:"include_card"`
+}
+
+func (q *Queries) SetLaunchIncludeCard(ctx context.Context, arg SetLaunchIncludeCardParams) error {
+	_, err := q.db.Exec(ctx, setLaunchIncludeCard, arg.ID, arg.IncludeCard)
 	return err
 }
 
@@ -482,7 +628,7 @@ UPDATE launches
 SET title = $2, summary = $3, launch_at = $4, window_minutes = $5, crew_cap = $6,
     roles = $7, headline_changes = $8
 WHERE id = $1
-RETURNING id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id
+RETURNING id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card
 `
 
 type UpdateLaunchParams struct {
@@ -533,6 +679,7 @@ func (q *Queries) UpdateLaunch(ctx context.Context, arg UpdateLaunchParams) (Lau
 		&i.QrLogo,
 		&i.CaptainNotified,
 		&i.TemplateID,
+		&i.IncludeCard,
 	)
 	return i, err
 }

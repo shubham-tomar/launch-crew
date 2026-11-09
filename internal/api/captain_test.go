@@ -95,9 +95,10 @@ func setupCaptain(t *testing.T) *captainEnv {
 	st := &session.Store{Keyring: kr}
 	r2 := r2fake.New("cards")
 	t.Cleanup(r2.Close)
+	up := cards.NewUploader(r2.URL, "cards", "ak", "sk", "https://cdn.example")
 	deps := launch.Deps{
 		Q: q, Pool: pool, Buffer: buf, Keyring: kr, BaseURL: "https://lc.test",
-		Cards:  cards.NewUploader(r2.URL, "cards", "ak", "sk", "https://cdn.example"),
+		Cards: up, Images: up,
 		Render: func(any, cards.Preset) ([]byte, error) { return []byte("png"), nil },
 		Preflight: preflight.Deps{
 			Fetch:        func(context.Context, string) (int, string, error) { return 200, "image/png", nil },

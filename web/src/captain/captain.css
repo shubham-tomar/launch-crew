@@ -1263,3 +1263,10 @@
   justify-self: stretch;
   padding-inline-start: calc(2.25rem + var(--space-ms));
 }
+
+/* A card whose picture R2 has dropped: the note sits where the card was. */
+.cap-card-gone {
+  min-block-size: 80px;
+  border-radius: var(--rounded-sm);
+  background-color: var(--color-tint);
+}

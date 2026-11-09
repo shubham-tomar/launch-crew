@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -804,5 +805,85 @@ func TestConnectedForOnlyTheMembersOwnHealthyConnection(t *testing.T) {
 	}
 	if crew.ConnectedFor(s.ctx, s.deps, id, owner.ID) {
 		t.Fatal("needs_reconnect counted as connected")
+	}
+}
+
+// The invite view carries what the posts will attach, so the approve screen
+// can show it: the launch's images in order (with what Bluesky gets) and
+// whether the card leads.
+func TestOpenViewListsImages(t *testing.T) {
+	s := newSvc(t)
+	for _, in := range []sqlc.InsertLaunchImageParams{
+		{LaunchID: s.launch.ID, R2Url: "https://cdn.test/uploads/a.png", Sha: "a", Bytes: 400_000},
+		{LaunchID: s.launch.ID, R2Url: "https://cdn.test/uploads/b.png", Sha: "b", Bytes: 3_000_000, SmallUrl: "https://cdn.test/uploads/b-small.jpg"},
+		{LaunchID: s.launch.ID, R2Url: "https://cdn.test/uploads/c.png", Sha: "c", Bytes: 9_000_000},
+	} {
+		if _, err := s.q.InsertLaunchImage(s.ctx, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.q.SetLaunchIncludeCard(s.ctx, sqlc.SetLaunchIncludeCardParams{ID: s.launch.ID, IncludeCard: false}); err != nil {
+		t.Fatal(err)
+	}
+	_, tok := s.ghMember(t, "ticked", s.now.Add(24*time.Hour))
+	v, err := crew.Open(s.ctx, s.deps, tok, net.ParseIP("10.0.0.9"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []crew.ImageView{
+		{URL: "https://cdn.test/uploads/a.png", Bluesky: "https://cdn.test/uploads/a.png"},
+		{URL: "https://cdn.test/uploads/b.png", Bluesky: "https://cdn.test/uploads/b-small.jpg"},
+		{URL: "https://cdn.test/uploads/c.png", Bluesky: ""},
+	}
+	if !reflect.DeepEqual(v.Images, want) {
+		t.Errorf("images = %+v, want %+v", v.Images, want)
+	}
+	if v.IncludeCard {
+		t.Error("includeCard = true, want false")
+	}
+}
+
+// Instagram needs something to attach. With the card switched off and no
+// images, the channel is not offered; add an image and it is.
+func TestInstagramNeedsSomethingToAttach(t *testing.T) {
+	s := newSvc(t)
+	s.channels(ch("ig1", "instagram"), ch("x1", "x"))
+	if err := s.q.SetLaunchIncludeCard(s.ctx, sqlc.SetLaunchIncludeCardParams{ID: s.launch.ID, IncludeCard: false}); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := s.member(t)
+	conn := s.conn(t)
+	a, err := crew.Connect(s.ctx, s.deps, id, conn.ID, uuid.Nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	find := func(v crew.ApproveView, ch string) crew.ChannelView {
+		for _, c := range v.Channels {
+			if c.ID == ch {
+				return c
+			}
+		}
+		t.Fatalf("channel %s missing from %+v", ch, v.Channels)
+		return crew.ChannelView{}
+	}
+	if ig := find(a, "ig1"); ig.Eligible || ig.Reason != "needs an image" {
+		t.Errorf("instagram with nothing to attach = %+v, want ineligible, needs an image", ig)
+	}
+	if x := find(a, "x1"); !x.Eligible {
+		t.Errorf("x = %+v, want eligible", x)
+	}
+
+	if _, err := s.q.InsertLaunchImage(s.ctx, sqlc.InsertLaunchImageParams{LaunchID: s.launch.ID, R2Url: "https://cdn.test/uploads/a.png", Sha: "a", Bytes: 1000}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(s.ctx, `UPDATE buffer_connections SET channels_cached_at = now() - interval '1 minute' WHERE id = $1`, conn.ID); err != nil {
+		t.Fatal(err)
+	}
+	b, err := crew.RefreshChannels(s.ctx, s.deps, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ig := find(b, "ig1"); !ig.Eligible {
+		t.Errorf("instagram with an image = %+v, want eligible", ig)
 	}
 }

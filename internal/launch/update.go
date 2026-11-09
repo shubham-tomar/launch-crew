@@ -3,13 +3,11 @@ package launch
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/shubham-tomar/launchcrew/internal/db/sqlc"
@@ -30,6 +28,8 @@ type Patch struct {
 	// QRLogo is plane, none or custom; QRLogoURL is the https image for custom.
 	QRLogo    *string `json:"qrLogo"`
 	QRLogoURL *string `json:"qrLogoUrl"`
+	// IncludeCard says whether the launch's posts lead with the card slot.
+	IncludeCard *bool `json:"includeCard"`
 }
 
 // Validate checks the patch against now.
@@ -98,18 +98,8 @@ func Update(ctx context.Context, d Deps, id uuid.UUID, p Patch) error {
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	// Lock the row so a concurrent Launch cannot slip between check and write.
-	var status string
-	if err := tx.QueryRow(ctx, `SELECT status FROM launches WHERE id = $1 FOR UPDATE`, id).Scan(&status); errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
-	} else if err != nil {
+	if err := lockDraft(ctx, tx, id, ErrNotDraft); err != nil {
 		return err
-	}
-	switch status {
-	case statusDeleted:
-		return ErrNotFound
-	case statusDraft:
-	default:
-		return ErrNotDraft
 	}
 	q := sqlc.New(tx)
 	l, err := q.GetLaunch(ctx, id)
@@ -156,6 +146,11 @@ func Update(ctx context.Context, d Deps, id uuid.UUID, p Patch) error {
 	}
 	if err := writeLogo(ctx, d, tx, q, id, logo); err != nil {
 		return err
+	}
+	if p.IncludeCard != nil {
+		if err := q.SetLaunchIncludeCard(ctx, sqlc.SetLaunchIncludeCardParams{ID: id, IncludeCard: *p.IncludeCard}); err != nil {
+			return fmt.Errorf("launch: set include card: %w", err)
+		}
 	}
 	// Captain drafts are built from the title, summary and headlines; the
 	// ones not yet sent are dropped so Detail or LaunchJob rebuilds them.

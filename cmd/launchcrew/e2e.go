@@ -68,6 +68,41 @@ type e2ePost struct {
 	DueAt       string `json:"dueAt,omitempty"`
 	SaveToDraft bool   `json:"saveToDraft"`
 	Text        string `json:"text"`
+	// Assets are the image URLs, from the post or its thread's root item.
+	Assets []string `json:"assets"`
+}
+
+// postAssets reads the image URLs a createPost input carries: top-level
+// assets, else the first thread item's (Buffer reads a thread's root there).
+func postAssets(in map[string]any) []string {
+	urls := func(v any) []string {
+		var out []string
+		list, _ := v.([]any)
+		for _, a := range list {
+			m, _ := a.(map[string]any)
+			for _, kind := range []string{"image", "video"} {
+				if img, ok := m[kind].(map[string]any); ok {
+					if u, ok := img["url"].(string); ok {
+						out = append(out, u)
+					}
+				}
+			}
+		}
+		return out
+	}
+	if out := urls(in["assets"]); len(out) > 0 {
+		return out
+	}
+	md, _ := in["metadata"].(map[string]any)
+	for _, svc := range md {
+		m, _ := svc.(map[string]any)
+		items, _ := m["thread"].([]any)
+		if len(items) > 0 {
+			root, _ := items[0].(map[string]any)
+			return urls(root["assets"])
+		}
+	}
+	return nil
 }
 
 // loadConfig reads the environment, or, with LAUNCHCREW_E2E=1, starts the fakes and
@@ -201,6 +236,10 @@ func (m *e2eMode) handleBuffer() {
 		p.DueAt, _ = in["dueAt"].(string)
 		p.SaveToDraft, _ = in["saveToDraft"].(bool)
 		p.Text, _ = in["text"].(string)
+		p.Assets = postAssets(in)
+		if p.Assets == nil {
+			p.Assets = []string{}
+		}
 		m.mu.Lock()
 		p.ID = "post-" + strconv.Itoa(len(m.posts)+1)
 		m.posts = append(m.posts, p)

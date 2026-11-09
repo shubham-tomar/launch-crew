@@ -62,9 +62,10 @@ type Launch struct {
 type CrewDraft struct {
 	Draft
 	ConnectionID uuid.UUID
-	AssetURL     string
-	LaunchAt     time.Time
-	Threshold    float64 // overlap threshold, 0.35 when zero
+	// AssetURLs are every image the post will carry, card first.
+	AssetURLs []string
+	LaunchAt  time.Time
+	Threshold float64 // overlap threshold, 0.35 when zero
 }
 
 // Deps are the outside calls preflight makes; tests pass fakes.
@@ -120,9 +121,9 @@ func Run(ctx context.Context, deps Deps, l Launch) ([]Check, bool) {
 
 // ForCrewDraft runs checks 1, 3, 4 and 5 for one crew member's post.
 func ForCrewDraft(ctx context.Context, deps Deps, d CrewDraft, recent []string) ([]Check, bool) {
-	var urls []Asset
-	if d.AssetURL != "" {
-		urls = []Asset{{URL: d.AssetURL, Label: lastSegment(d.AssetURL)}}
+	urls := make([]Asset, 0, len(d.AssetURLs))
+	for _, u := range d.AssetURLs {
+		urls = append(urls, Asset{URL: u, Label: lastSegment(u)})
 	}
 	cs := []Check{
 		checkURLs(ctx, deps, urls),
@@ -217,6 +218,9 @@ func checkRules(ctx context.Context, deps Deps, conn uuid.UUID, drafts []Draft) 
 		}
 		if d.HasAsset && !r.ImageOK {
 			return fail(3, name, fmt.Sprintf("%s does not take images. Remove the image from that post.", d.Network))
+		}
+		if !d.HasAsset && strings.EqualFold(d.Network, "instagram") {
+			return fail(3, name, "Instagram post has no image. Turn the card on or add an image.")
 		}
 	}
 	return pass(3, name)
