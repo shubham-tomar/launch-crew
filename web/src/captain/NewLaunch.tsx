@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { createLaunch, type NewLaunch as Body, type QrLogo, type Role } from '../api'
+import { createLaunch, listTemplates, previewQr, type NewLaunch as Body, type QrLogo, type Role, type Template } from '../api'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
 import Pass from '../components/Pass'
@@ -33,6 +33,45 @@ const QR_OPTIONS: { id: QrLogo; label: string }[] = [
   { id: 'none', label: 'None' },
   { id: 'custom', label: 'My own image' },
 ]
+
+const HTTPS = /^https:\/\/\S+$/i
+const PREVIEW_DELAY = 600
+
+type Slide = { png?: string; error?: string; loading: boolean }
+
+// Redraws the event slide a moment after the title or the QR mark stops changing.
+function useSlidePreview(title: string, qr: QrLogo, qrUrl: string): Slide {
+  const [state, setState] = useState<Slide>({ loading: false })
+  const ready = qr !== 'custom' || HTTPS.test(qrUrl)
+  useEffect(() => {
+    if (!ready) return
+    let live = true
+    const t = window.setTimeout(() => {
+      setState((s) => ({ ...s, loading: true, error: undefined }))
+      previewQr({ title, qrLogo: qr, ...(qr === 'custom' ? { qrLogoUrl: qrUrl } : {}) })
+        .then((r) => live && setState({ png: r.png, loading: false }))
+        .catch((e) => live && setState((s) => ({ ...s, loading: false, error: asError(e).message })))
+    }, PREVIEW_DELAY)
+    return () => {
+      live = false
+      window.clearTimeout(t)
+    }
+  }, [title, qr, qrUrl, ready])
+  return state
+}
+
+// The hero as the browser loads it, keyed on the URL so a new link clears an old failure.
+function HeroPreview({ url }: { url: string }) {
+  const [broken, setBroken] = useState(false)
+  return (
+    <figure className="nl-hero-preview">
+      {!broken && <img src={url} alt="Hero image preview" onError={() => setBroken(true)} />}
+      <figcaption className={broken ? 'nl-error' : 'nl-hint'}>
+        {broken ? 'That link did not load as an image. Check it opens on its own.' : 'Preview. The cards fade it behind the text.'}
+      </figcaption>
+    </figure>
+  )
+}
 
 const sameRoles = (a: Role[], b: Role[]) => a.length === b.length && a.every((r, i) => r.name === b[i].name && r.hint === b[i].hint)
 
@@ -79,8 +118,23 @@ export default function NewLaunch() {
   const [qr, setQr] = useState<QrLogo>('plane')
   const [qrUrl, setQrUrl] = useState('')
   const [qrError, setQrError] = useState<string>()
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [templateId, setTemplateId] = useState('')
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
+
+  const slide = useSlidePreview(title.trim(), qr, qrUrl.trim())
+
+  // The template picker is a nicety: if the list does not load, the built-in one is used.
+  useEffect(() => {
+    let live = true
+    listTemplates()
+      .then((v) => live && setTemplates(v.templates ?? []))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
 
   const setRole = (i: number, patch: Partial<Role>) =>
     setRoles((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
@@ -108,12 +162,12 @@ export default function NewLaunch() {
     setWinError(badWin)
     if (badTitle || badAt || badWin) return
     const url = hero.trim()
-    if (url && !/^https:\/\/\S+$/i.test(url)) {
+    if (url && !HTTPS.test(url)) {
       setHeroError('Use an https:// image URL.')
       return
     }
     const logo = qrUrl.trim()
-    if (qr === 'custom' && !/^https:\/\/\S+$/i.test(logo)) {
+    if (qr === 'custom' && !HTTPS.test(logo)) {
       setQrError('Use an https:// image URL.')
       return
     }
@@ -132,6 +186,7 @@ export default function NewLaunch() {
       body.qrLogo = 'custom'
       body.qrLogoUrl = logo
     }
+    if (templateId) body.templateId = templateId
     setBusy(true)
     try {
       const d = await createLaunch(body)
@@ -294,6 +349,7 @@ export default function NewLaunch() {
                 onChange={(e) => setHero(e.target.value)}
               />
               <span id="nl-hero-hint" className="nl-hint">Sits behind every contributor card. Leave it empty and the cards stay typographic.</span>
+              {HTTPS.test(hero.trim()) && <HeroPreview key={hero.trim()} url={hero.trim()} />}
             </div>
             {heroError && <span id="cap-hero-error" role="alert" className="nl-error">{heroError}</span>}
             <fieldset className="nl-fieldset">
@@ -324,6 +380,20 @@ export default function NewLaunch() {
               )}
               {qrError && <span id="cap-qr-error" role="alert" className="nl-error">{qrError}</span>}
             </fieldset>
+            <div className="nl-field">
+              <label htmlFor="nl-template">Template</label>
+              <select id="nl-template" className="field" value={templateId} onChange={(e) => setTemplateId(e.target.value)} aria-describedby="nl-template-hint">
+                <option value="">Built-in</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <span id="nl-template-hint" className="nl-hint">
+                The notes the model reads while drafting the crew's posts. <Link to="/captain/templates">Manage templates</Link>
+              </span>
+            </div>
             {error && <Alert tone="error">{error}</Alert>}
             <div className="nl-submit">
               <Button variant="primary" type="submit" busy={busy} disabled={busy}>
@@ -349,6 +419,24 @@ export default function NewLaunch() {
                 <span>{at ? `Goes out ${DAY(at)}` : 'Time not set'}</span>
               </div>
             </div>
+            <span className="nl-kicker">Event slide</span>
+            <figure className="nl-slide" aria-busy={slide.loading || undefined}>
+              {slide.png ? (
+                <img
+                  src={slide.png}
+                  alt={`Sample event slide for ${title.trim() || 'your launch'} with a QR code`}
+                  className={slide.loading ? 'nl-slide-stale' : undefined}
+                />
+              ) : (
+                <span className="nl-slide-empty skeleton-line" aria-hidden="true" />
+              )}
+              <figcaption className={slide.error ? 'nl-error' : 'nl-hint'}>
+                {slide.error ??
+                  (qr === 'custom' && !HTTPS.test(qrUrl.trim())
+                    ? 'Add an https:// image URL to see your mark.'
+                    : 'Show this at the event. The QR opens the launch so people can join in.')}
+              </figcaption>
+            </figure>
             <span className="nl-kicker">Contributor card</span>
             <Pass
               eyebrow={title.trim() || 'Your launch'}

@@ -366,3 +366,18 @@
   aspect-ratio: 1200 / 630;
   border-radius: var(--rounded-md);
 }
+
+.rp-template {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--type-small-size);
+  color: var(--color-text-muted);
+}
+
+.rp-template select {
+  inline-size: auto;
+  min-inline-size: 12rem;
+}

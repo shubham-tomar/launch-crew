@@ -254,6 +254,10 @@ func CreateManual(ctx context.Context, d Deps, ownerID uuid.UUID, in trigger.Man
 	if err != nil {
 		return Summary{}, "", err
 	}
+	tmpl, err := templateRef(ctx, d, ownerID, in.TemplateID)
+	if err != nil {
+		return Summary{}, "", err
+	}
 	roles, err := json.Marshal(spec.Roles)
 	if err != nil {
 		return Summary{}, "", err
@@ -273,6 +277,7 @@ func CreateManual(ctx context.Context, d Deps, ownerID uuid.UUID, in trigger.Man
 	l, err := q.CreateLaunch(ctx, sqlc.CreateLaunchParams{
 		OwnerUserID: ownerID, Source: "manual", Title: spec.Title, Summary: spec.Summary,
 		HeadlineChanges: []byte(`[]`), Roles: roles, WindowMinutes: defaultWindow, CrewCap: defaultCap,
+		TemplateID: tmpl,
 	})
 	if err != nil {
 		return Summary{}, "", fmt.Errorf("launch: create: %w", err)

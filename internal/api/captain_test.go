@@ -462,36 +462,49 @@ func TestCaptainRetryCommentOtherLaunch(t *testing.T) {
 	}
 }
 
-func TestCaptainSettingsRoutes(t *testing.T) {
+func TestCaptainTemplateRoutes(t *testing.T) {
 	e := setupCaptain(t)
 	mine := e.cookie(t, session.Session{UserID: e.owner.ID})
 	theirs := e.cookie(t, session.Session{UserID: e.other.ID})
 
-	if rr := e.do("GET", "/api/captain/settings", "", nil, nil); rr.Code != http.StatusUnauthorized {
+	if rr := e.do("GET", "/api/captain/templates", "", nil, nil); rr.Code != http.StatusUnauthorized {
 		t.Fatalf("signed out: %d", rr.Code)
 	}
-	rr := e.do("GET", "/api/captain/settings", "", nil, mine)
+	rr := e.do("GET", "/api/captain/templates", "", nil, mine)
 	v := decode(t, rr)
-	if rr.Code != 200 || v["commentTemplate"] != "" || v["draftNotes"] != "" || v["defaultComment"] == "" || v["preview"] == "" {
-		t.Fatalf("defaults: %d %s", rr.Code, rr.Body)
+	if rr.Code != 200 || len(v["templates"].([]any)) != 0 || v["defaultComment"] == "" || v["defaultPreview"] == "" {
+		t.Fatalf("empty list: %d %s", rr.Code, rr.Body)
 	}
-	rr = e.do("PUT", "/api/captain/settings", `{"commentTemplate":"Thanks for your PR!"}`, nil, mine)
+	rr = e.do("POST", "/api/captain/templates", `{"name":"Release","commentTemplate":"Thanks for your PR!"}`, nil, mine)
 	if rr.Code != http.StatusBadRequest || decode(t, rr)["error"] != "invalid" {
 		t.Fatalf("template without {link}: %d %s", rr.Code, rr.Body)
 	}
-	rr = e.do("PUT", "/api/captain/settings", `{"commentTemplate":"{captain} shipped {project} {version} with {credited}. Tap {link}","draftNotes":"Mention the Discord."}`, nil, mine)
+	rr = e.do("POST", "/api/captain/templates", `{"name":"Release","commentTemplate":"{captain} shipped {project} {version} with {credited}. Tap {link}","draftNotes":"Mention the Discord."}`, nil, mine)
 	v = decode(t, rr)
-	if rr.Code != 200 || v["draftNotes"] != "Mention the Discord." || !strings.Contains(v["preview"].(string), "you shipped rocket v2.4.0") || !strings.Contains(v["preview"].(string), "Nothing posts without your tap") {
+	if rr.Code != http.StatusCreated || v["draftNotes"] != "Mention the Discord." || !strings.Contains(v["preview"].(string), "you shipped rocket v2.4.0") {
+		t.Fatalf("create: %d %s", rr.Code, rr.Body)
+	}
+	id := v["id"].(string)
+	rr = e.do("PUT", "/api/captain/templates/"+id, `{"name":"Releases","draftNotes":""}`, nil, mine)
+	if v = decode(t, rr); rr.Code != 200 || v["name"] != "Releases" || v["commentTemplate"] != "" {
 		t.Fatalf("save: %d %s", rr.Code, rr.Body)
 	}
-	// A later save of one field keeps the other.
-	rr = e.do("PUT", "/api/captain/settings", `{"draftNotes":""}`, nil, mine)
-	v = decode(t, rr)
-	if rr.Code != 200 || v["draftNotes"] != "" || !strings.HasPrefix(v["commentTemplate"].(string), "{captain} shipped") {
-		t.Fatalf("partial save: %d %s", rr.Code, rr.Body)
+	// Another captain neither sees nor changes it.
+	if rr := e.do("GET", "/api/captain/templates", "", nil, theirs); len(decode(t, rr)["templates"].([]any)) != 0 {
+		t.Fatalf("other captain list: %s", rr.Body)
 	}
-	// Another captain sees their own defaults, not these.
-	if rr := e.do("GET", "/api/captain/settings", "", nil, theirs); rr.Code != 200 || decode(t, rr)["commentTemplate"] != "" {
-		t.Fatalf("other captain: %d %s", rr.Code, rr.Body)
+	if rr := e.do("PUT", "/api/captain/templates/"+id, `{"name":"Mine now"}`, nil, theirs); rr.Code != http.StatusNotFound {
+		t.Fatalf("other captain save: %d", rr.Code)
+	}
+	if rr := e.do("DELETE", "/api/captain/templates/"+id, "", nil, theirs); rr.Code != http.StatusNotFound {
+		t.Fatalf("other captain delete: %d", rr.Code)
+	}
+	if rr := e.do("DELETE", "/api/captain/templates/"+id, "", nil, mine); rr.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d", rr.Code)
+	}
+	// The QR preview draws a slide.
+	rr = e.do("POST", "/api/captain/qr-preview", `{"title":"Go meetup","qrLogo":"none"}`, nil, mine)
+	if rr.Code != 200 || !strings.HasPrefix(decode(t, rr)["png"].(string), "data:image/png;base64,") {
+		t.Fatalf("qr preview: %d", rr.Code)
 	}
 }

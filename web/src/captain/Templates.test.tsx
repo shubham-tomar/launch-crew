@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import App from '../App'
-import type { CaptainSettings } from '../api'
+import type { Template, TemplatesView } from '../api'
 import { CONSENT, renderComment, templateProblem } from './comment-template'
 
 const DEFAULT =
@@ -10,32 +10,43 @@ const DEFAULT =
   CONSENT +
   '\n\nOpt out or delete your data: {settings}'
 
-const settings = (over: Partial<CaptainSettings> = {}): CaptainSettings => ({
-  commentTemplate: '',
-  draftNotes: '',
+const view = (templates: Template[] = []): TemplatesView => ({
+  templates,
   defaultComment: DEFAULT,
+  defaultPreview: renderComment('', DEFAULT),
   placeholders: ['{captain}', '{project}', '{version}', '{credited}', '{link}', '{settings}'],
-  preview: renderComment('', DEFAULT),
   maxCommentLen: 1500,
   maxNotesLen: 600,
+  maxNameLen: 40,
+  maxTemplates: 20,
+})
+
+const tmpl = (over: Partial<Template> = {}): Template => ({
+  id: 't1',
+  name: 'Meetups',
+  commentTemplate: '',
+  draftNotes: '',
+  preview: renderComment('', DEFAULT),
   ...over,
 })
 
-type Call = { method: string; body?: unknown }
+type Call = { method: string; url: string; body?: unknown }
 
-function mockApi(initial: CaptainSettings, reply?: (body: Record<string, string>) => Response) {
+function mockApi(initial: TemplatesView, reply?: (body: Record<string, string>) => Response) {
   const calls: Call[] = []
   vi.stubGlobal(
     'fetch',
-    vi.fn((_url: string, init?: RequestInit) => {
+    vi.fn((url: string, init?: RequestInit) => {
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
-      calls.push({ method, body })
-      if (method === 'PUT') {
+      calls.push({ method, url, body })
+      if (method === 'POST' || method === 'PUT') {
+        const id = method === 'POST' ? 'new1' : url.split('/').pop()
         return Promise.resolve(
-          reply ? reply(body) : new Response(JSON.stringify(settings({ ...body, preview: renderComment(body.commentTemplate ?? '', DEFAULT) })), { status: 200 }),
+          reply ? reply(body) : new Response(JSON.stringify(tmpl({ ...body, id, preview: renderComment(body.commentTemplate ?? '', DEFAULT) })), { status: method === 'POST' ? 201 : 200 }),
         )
       }
+      if (method === 'DELETE') return Promise.resolve(new Response(null, { status: 204 }))
       return Promise.resolve(new Response(JSON.stringify(initial), { status: 200 }))
     }),
   )
@@ -69,52 +80,78 @@ test('templateProblem names the missing link and the length cap; empty is fine',
   expect(templateProblem('x'.repeat(101) + '{link}', 100)).toMatch(/under 100/)
 })
 
-test('the page loads both templates, previews as you type and saves them', async () => {
-  const calls = mockApi(settings())
+test('the built-in template is shown read-only first', async () => {
+  mockApi(view([tmpl()]))
+  visit()
+  expect(await screen.findByRole('button', { name: 'Built-in' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByLabelText('Comment preview')).toHaveTextContent('**@you** launched **rocket v2.4.0**')
+  expect(screen.queryByLabelText('Comment template')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Meetups' })).toBeInTheDocument()
+})
+
+test('a new template previews as you type and is created with its name', async () => {
+  const calls = mockApi(view())
   const user = userEvent.setup()
   visit()
-  const box = await screen.findByLabelText('Comment template')
-  expect(box).toHaveValue('')
-  expect(screen.getByLabelText('Comment preview')).toHaveTextContent('**@you** launched **rocket v2.4.0**')
-  expect(screen.getByRole('button', { name: 'Save templates' })).toBeDisabled()
-
+  await user.click(await screen.findByRole('button', { name: '+ New template' }))
+  const create = screen.getByRole('button', { name: 'Create template' })
+  expect(create).toBeDisabled() // no name yet
+  await user.type(screen.getByLabelText('Template name'), 'Meetups')
+  const box = screen.getByLabelText('Comment template')
   await user.type(box, 'Thanks for {{credited}!')
   expect(screen.getByText(/needs \{link\}/)).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Save templates' })).toBeDisabled()
+  expect(create).toBeDisabled()
   await user.click(screen.getByRole('button', { name: '{link}' }))
   expect(box).toHaveValue('Thanks for {credited}!{link}')
   expect(screen.getByLabelText('Comment preview')).toHaveTextContent('Thanks for your PR, *Split-pane resize with keyboard*!https://launchcrew.example/s/abc')
   expect(screen.getByLabelText('Comment preview')).toHaveTextContent(CONSENT)
-
   await user.type(screen.getByLabelText('Drafting notes'), 'Mention the Discord.')
-  await user.click(screen.getByRole('button', { name: 'Save templates' }))
+  await user.click(create)
   expect(await screen.findByText('Saved.')).toBeInTheDocument()
-  const put = calls.find((c) => c.method === 'PUT')
-  expect(put?.body).toEqual({ commentTemplate: 'Thanks for {credited}!{link}', draftNotes: 'Mention the Discord.' })
+  expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ name: 'Meetups', commentTemplate: 'Thanks for {credited}!{link}', draftNotes: 'Mention the Discord.' })
+  expect(screen.getByRole('button', { name: 'Meetups' })).toHaveAttribute('aria-pressed', 'true')
 })
 
-test('a saved template can go back to the built-in one', async () => {
-  mockApi(settings({ commentTemplate: 'Mine {link}' }))
+test('an existing template saves in place and can go back to the built-in comment', async () => {
+  const calls = mockApi(view([tmpl({ commentTemplate: 'Mine {link}' })]))
   const user = userEvent.setup()
   visit()
-  const box = await screen.findByLabelText('Comment template')
+  await user.click(await screen.findByRole('button', { name: 'Meetups' }))
+  const box = screen.getByLabelText('Comment template')
   expect(box).toHaveValue('Mine {link}')
+  expect(screen.getByRole('button', { name: 'Save template' })).toBeDisabled()
   await user.click(screen.getByRole('button', { name: 'Use the built-in comment' }))
   expect(box).toHaveValue('')
-  expect(screen.getByRole('button', { name: 'Save templates' })).toBeEnabled()
+  await user.click(screen.getByRole('button', { name: 'Save template' }))
+  expect(await screen.findByText('Saved.')).toBeInTheDocument()
+  expect(calls.find((c) => c.method === 'PUT')).toMatchObject({ url: '/api/captain/templates/t1', body: { name: 'Meetups', commentTemplate: '' } })
+})
+
+test('deleting asks first, then drops the template', async () => {
+  const calls = mockApi(view([tmpl()]))
+  const user = userEvent.setup()
+  visit()
+  await user.click(await screen.findByRole('button', { name: 'Meetups' }))
+  await user.click(screen.getByRole('button', { name: 'Delete' }))
+  expect(screen.getByText(/go back to the built-in template/)).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Delete template' }))
+  expect(await screen.findByRole('button', { name: 'Built-in' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.queryByRole('button', { name: 'Meetups' })).not.toBeInTheDocument()
+  expect(calls.some((c) => c.method === 'DELETE' && c.url === '/api/captain/templates/t1')).toBe(true)
 })
 
 test('a server refusal is shown beside the save button', async () => {
-  mockApi(settings(), () => new Response(JSON.stringify({ error: 'invalid', message: 'keep it shorter' }), { status: 400 }))
+  mockApi(view(), () => new Response(JSON.stringify({ error: 'invalid', message: 'you already have a template called "Meetups"' }), { status: 400 }))
   const user = userEvent.setup()
   visit()
-  await user.type(await screen.findByLabelText('Drafting notes'), 'x')
-  await user.click(screen.getByRole('button', { name: 'Save templates' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent('keep it shorter')
+  await user.click(await screen.findByRole('button', { name: '+ New template' }))
+  await user.type(screen.getByLabelText('Template name'), 'Meetups')
+  await user.click(screen.getByRole('button', { name: 'Create template' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('already have a template')
 })
 
 test('Templates is in the captain nav', async () => {
-  mockApi(settings())
+  mockApi(view())
   visit()
   expect(await screen.findByRole('link', { name: 'Templates' })).toHaveAttribute('aria-current', 'page')
 })

@@ -1,9 +1,14 @@
 package launch
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif"  // custom QR mark formats
+	_ "image/jpeg" // custom QR mark formats
+	_ "image/png"  // custom QR mark formats
 	"net/url"
 	"strings"
 
@@ -122,4 +127,37 @@ func qrLogoOf(ctx context.Context, d Deps, launchID uuid.UUID) (mode, logoURL st
 		mode = qrPlane
 	}
 	return mode, ""
+}
+
+// QRPreview draws the event slide for the new launch form: the title (or a
+// sample) over a QR of a sample link, with the chosen centre mark. A custom
+// mark is fetched through the logo guard, like the real one.
+func QRPreview(ctx context.Context, d Deps, title, mode, raw string) ([]byte, error) {
+	if err := validateLogo(mode, raw, d.AllowLoopback); err != nil {
+		return nil, err
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "Your launch"
+	}
+	if r := []rune(title); len(r) > 120 {
+		title = string(r[:120])
+	}
+	logo := cards.SlideLogo{Mode: mode}
+	if mode == qrCustom {
+		b, err := fetchLogo(ctx, raw, d.AllowLoopback)
+		if err != nil {
+			return nil, err
+		}
+		img, _, err := image.Decode(bytes.NewReader(b))
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrLogoNotImage, err)
+		}
+		logo.Image = img
+	}
+	base := strings.TrimRight(d.BaseURL, "/")
+	if base == "" {
+		base = "https://launchcrewbot.app"
+	}
+	return cards.RenderQRSlideLogo(title, base+"/s/preview", logo)
 }

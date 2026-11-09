@@ -373,3 +373,46 @@
   font-size: var(--type-small-size);
   font-variant-numeric: tabular-nums;
 }
+
+.nl-slide {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+}
+
+.nl-slide img {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--rounded-md);
+  transition: opacity 160ms;
+}
+
+.nl-slide .nl-slide-stale {
+  opacity: 0.55;
+}
+
+.nl-slide-empty {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--rounded-md);
+}
+
+.nl-hero-preview {
+  display: grid;
+  gap: var(--space-xs);
+  margin: var(--space-xs) 0 0;
+}
+
+.nl-hero-preview img {
+  display: block;
+  inline-size: 100%;
+  max-inline-size: 24rem;
+  block-size: auto;
+  max-block-size: 12rem;
+  object-fit: cover;
+  border-radius: var(--rounded-sm);
+}

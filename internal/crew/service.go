@@ -236,9 +236,9 @@ func infoOf(ctx context.Context, d Deps, l sqlc.Launch) launchInfo {
 			log.Printf("crew: launch %s headline changes: %v", l.ID, err)
 		}
 	}
-	if l.OwnerUserID.Valid {
-		if cs, err := d.Q.GetCaptainSettings(ctx, l.OwnerUserID.UUID); err == nil {
-			info.notes = cs.DraftNotes
+	if l.TemplateID.Valid {
+		if t, err := d.Q.GetCaptainTemplate(ctx, l.TemplateID.UUID); err == nil {
+			info.notes = t.DraftNotes
 		}
 	}
 	return info

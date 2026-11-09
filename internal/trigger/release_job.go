@@ -202,6 +202,7 @@ func (d ReleaseDeps) save(ctx context.Context, render func(any, cards.Preset) ([
 		Roles:           rolesJSON,
 		WindowMinutes:   90,
 		CrewCap:         200,
+		TemplateID:      repo.TemplateID,
 	})
 	if err != nil {
 		return fmt.Errorf("create launch: %w", err)

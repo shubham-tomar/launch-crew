@@ -105,4 +105,7 @@ type ManualInput struct {
 	// QRLogo is plane, none or custom ("" is plane); QRLogoURL is the image
 	// for custom. Both are handled by the launch service, not by Build.
 	QRLogo, QRLogoURL string
+	// TemplateID is one of the captain's templates, "" for the built-in
+	// default; the launch service checks it.
+	TemplateID string
 }

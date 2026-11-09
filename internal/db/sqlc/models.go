@@ -73,6 +73,16 @@ type CaptainSetting struct {
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
+type CaptainTemplate struct {
+	ID              uuid.UUID          `json:"id"`
+	UserID          uuid.UUID          `json:"user_id"`
+	Name            string             `json:"name"`
+	CommentTemplate string             `json:"comment_template"`
+	DraftNotes      string             `json:"draft_notes"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type CrewDraft struct {
 	ID           uuid.UUID          `json:"id"`
 	CrewMemberID uuid.UUID          `json:"crew_member_id"`
@@ -165,6 +175,7 @@ type Launch struct {
 	ReleaseID       pgtype.Int8        `json:"release_id"`
 	QrLogo          string             `json:"qr_logo"`
 	CaptainNotified []string           `json:"captain_notified"`
+	TemplateID      uuid.NullUUID      `json:"template_id"`
 }
 
 type LaunchAsset struct {
@@ -214,6 +225,7 @@ type Repo struct {
 	Accent          string        `json:"accent"`
 	CardBg          string        `json:"card_bg"`
 	CardText        string        `json:"card_text"`
+	TemplateID      uuid.NullUUID `json:"template_id"`
 }
 
 type User struct {

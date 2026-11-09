@@ -1,8 +1,8 @@
 -- name: CreateLaunch :one
 INSERT INTO launches
     (owner_user_id, repo_id, source, title, summary, release_tag, release_url,
-     headline_changes, roles, launch_at, window_minutes, crew_cap, card_preset)
-VALUES (sqlc.arg(owner_user_id)::uuid, sqlc.arg(repo_id), sqlc.arg(source), sqlc.arg(title), sqlc.arg(summary), sqlc.arg(release_tag), sqlc.arg(release_url), sqlc.arg(headline_changes), sqlc.arg(roles), sqlc.arg(launch_at), sqlc.arg(window_minutes), sqlc.arg(crew_cap), sqlc.arg(card_preset))
+     headline_changes, roles, launch_at, window_minutes, crew_cap, card_preset, template_id)
+VALUES (sqlc.arg(owner_user_id)::uuid, sqlc.arg(repo_id), sqlc.arg(source), sqlc.arg(title), sqlc.arg(summary), sqlc.arg(release_tag), sqlc.arg(release_url), sqlc.arg(headline_changes), sqlc.arg(roles), sqlc.arg(launch_at), sqlc.arg(window_minutes), sqlc.arg(crew_cap), sqlc.arg(card_preset), sqlc.narg(template_id))
 RETURNING *;
 
 -- name: GetLaunch :one

@@ -33,6 +33,8 @@ const (
 type SlideLogo struct {
 	Mode string
 	URL  string
+	// Image, when set, is the custom mark already fetched; it wins over URL.
+	Image image.Image
 }
 
 // planePath is the Launch Crew plane in a 24x24 box, nose up: a polygon with
@@ -83,8 +85,12 @@ func drawQRMark(dc *gg.Context, logo SlideLogo) {
 	dc.SetRGB(1, 1, 1)
 	dc.DrawRoundedRectangle(x, y, qrMark, qrMark, qrMarkRadius)
 	dc.Fill()
-	if logo.Mode == LogoCustom && logo.URL != "" {
-		if img, err := fetchAvatar(logo.URL); err == nil {
+	if logo.Mode == LogoCustom && (logo.Image != nil || logo.URL != "") {
+		img, err := logo.Image, error(nil)
+		if img == nil {
+			img, err = fetchAvatar(logo.URL)
+		}
+		if err == nil {
 			const box = qrLogoBox
 			b := img.Bounds()
 			scale := math.Min(box/float64(b.Dx()), box/float64(b.Dy()))

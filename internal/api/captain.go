@@ -47,8 +47,11 @@ func NewCaptain(deps launch.Deps, sessions *session.Store) http.Handler {
 	r.Get("/repos", c.repos)
 	r.Patch("/repos/{id}", c.patchRepo)
 	r.Post("/repos/{id}/card-preview", c.repoCardPreview)
-	r.Get("/settings", c.settings)
-	r.Put("/settings", c.saveSettings)
+	r.Get("/templates", c.templates)
+	r.Post("/templates", c.createTemplate)
+	r.Put("/templates/{id}", c.saveTemplate)
+	r.Delete("/templates/{id}", c.deleteTemplate)
+	r.Post("/qr-preview", c.qrPreview)
 	return r
 }
 
@@ -145,6 +148,7 @@ type createBody struct {
 	HeroURL       string         `json:"heroUrl"`
 	QRLogo        string         `json:"qrLogo"`
 	QRLogoURL     string         `json:"qrLogoUrl"`
+	TemplateID    string         `json:"templateId"`
 	LaunchAt      *time.Time     `json:"launchAt"`
 	WindowMinutes *int           `json:"windowMinutes"`
 	CrewCap       *int           `json:"crewCap"`
@@ -162,7 +166,7 @@ func (c *Captain) create(w http.ResponseWriter, r *http.Request) {
 	}
 	l, _, err := launch.CreateManual(r.Context(), c.deps, userID(r), trigger.ManualInput{
 		Title: b.Title, Summary: b.Summary, Roles: b.Roles, HeroURL: b.HeroURL,
-		QRLogo: b.QRLogo, QRLogoURL: b.QRLogoURL,
+		QRLogo: b.QRLogo, QRLogoURL: b.QRLogoURL, TemplateID: b.TemplateID,
 	})
 	if err != nil {
 		c.fail(w, r, err)
@@ -308,8 +312,8 @@ func (c *Captain) repoCardPreview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"png": "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)})
 }
 
-func (c *Captain) settings(w http.ResponseWriter, r *http.Request) {
-	v, err := launch.GetSettings(r.Context(), c.deps, userID(r))
+func (c *Captain) templates(w http.ResponseWriter, r *http.Request) {
+	v, err := launch.Templates(r.Context(), c.deps, userID(r))
 	if err != nil {
 		c.fail(w, r, err)
 		return
@@ -317,15 +321,64 @@ func (c *Captain) settings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
-func (c *Captain) saveSettings(w http.ResponseWriter, r *http.Request) {
-	var p launch.SettingsPatch
-	if !readJSON(w, r, &p) {
+func (c *Captain) createTemplate(w http.ResponseWriter, r *http.Request) {
+	var in launch.TemplateInput
+	if !readJSON(w, r, &in) {
 		return
 	}
-	v, err := launch.SaveSettings(r.Context(), c.deps, userID(r), p)
+	t, err := launch.CreateTemplate(r.Context(), c.deps, userID(r), in)
 	if err != nil {
 		c.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, v)
+	writeJSON(w, http.StatusCreated, t)
+}
+
+func (c *Captain) saveTemplate(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		notFound(w, r)
+		return
+	}
+	var in launch.TemplateInput
+	if !readJSON(w, r, &in) {
+		return
+	}
+	t, err := launch.UpdateTemplate(r.Context(), c.deps, userID(r), id, in)
+	if err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (c *Captain) deleteTemplate(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		notFound(w, r)
+		return
+	}
+	if err := launch.DeleteTemplate(r.Context(), c.deps, userID(r), id); err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// qrPreview draws the event slide for the new launch form, as a data URL.
+func (c *Captain) qrPreview(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Title     string `json:"title"`
+		QRLogo    string `json:"qrLogo"`
+		QRLogoURL string `json:"qrLogoUrl"`
+	}
+	if !readJSON(w, r, &b) {
+		return
+	}
+	png, err := launch.QRPreview(r.Context(), c.deps, b.Title, b.QRLogo, b.QRLogoURL)
+	if err != nil {
+		c.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"png": "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)})
 }

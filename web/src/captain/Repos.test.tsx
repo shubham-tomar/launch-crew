@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router'
 import type { Repo } from '../api'
 import Repos from './Repos'
 
-const repo = (over: Partial<Repo> = {}): Repo => ({ id: 'r1', fullName: 'acme/rocket', enabled: true, allowPrerelease: false, logoUrl: '', accent: '', background: '', text: '', ...over })
+const repo = (over: Partial<Repo> = {}): Repo => ({ id: 'r1', fullName: 'acme/rocket', enabled: true, allowPrerelease: false, logoUrl: '', accent: '', background: '', text: '', templateId: '', ...over })
 
 function setup(list: Repo[]) {
   const calls: { method: string; url: string; body?: unknown }[] = []
@@ -14,6 +14,9 @@ function setup(list: Repo[]) {
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
       calls.push({ method, url, body })
+      if (url.endsWith('/templates')) {
+        return Promise.resolve(new Response(JSON.stringify({ templates: [{ id: 't1', name: 'Releases', commentTemplate: '', draftNotes: '', preview: '' }] }), { status: 200 }))
+      }
       if (url.endsWith('/card-preview')) return Promise.resolve(new Response(JSON.stringify({ png: 'data:image/png;base64,AAAA' }), { status: 200 }))
       if (method === 'PATCH') return Promise.resolve(new Response(JSON.stringify({ ...list[0], ...body }), { status: 200 }))
       return Promise.resolve(new Response(JSON.stringify(list), { status: 200 }))
@@ -55,10 +58,12 @@ test('no repos shows a friendly empty state with the add button', async () => {
 })
 
 test('offline shows a plain message and Retry fetches again', async () => {
-  const fetchMock = vi.fn()
+  const repoCalls = vi.fn()
     .mockRejectedValueOnce(new TypeError('Failed to fetch'))
     .mockResolvedValueOnce(new Response(JSON.stringify([repo()]), { status: 200 }))
-  vi.stubGlobal('fetch', fetchMock)
+  vi.stubGlobal('fetch', (url: string) =>
+    url.endsWith('/templates') ? Promise.resolve(new Response(JSON.stringify({ templates: [] }), { status: 200 })) : repoCalls(url),
+  )
   render(
     <MemoryRouter>
       <Repos />
@@ -68,7 +73,7 @@ test('offline shows a plain message and Retry fetches again', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
   expect(await screen.findByText('acme/rocket')).toBeInTheDocument()
   expect(screen.queryByRole('alert')).toBeNull()
-  expect(fetchMock).toHaveBeenCalledTimes(2)
+  expect(repoCalls).toHaveBeenCalledTimes(2)
 })
 
 test('a switch flips at once, is held while saving, and reverts with an inline error on failure', async () => {
@@ -145,4 +150,14 @@ test('the branding fold draws a preview once open, and again when the accent cha
   expect(previews()[0]).toMatchObject({ method: 'POST', url: '/api/captain/repos/r1/card-preview', body: { logoUrl: '', accent: '', background: '', text: '' } })
   await userEvent.click(screen.getByRole('button', { name: 'Use #D9A520 for accent' }))
   await waitFor(() => expect(previews().at(-1)?.body).toEqual({ logoUrl: '', accent: '#D9A520', background: '', text: '' }), { timeout: 2000 })
+})
+
+test('each repo picks a template for its release launches', async () => {
+  const calls = setup([repo()])
+  const select = await screen.findByLabelText('Template for acme/rocket')
+  expect(select).toHaveValue('')
+  expect(await screen.findByRole('option', { name: 'Releases' })).toBeInTheDocument()
+  await userEvent.selectOptions(select, 'Releases')
+  await waitFor(() => expect(calls.filter((c) => c.method === 'PATCH').at(-1)?.body).toEqual({ templateId: 't1' }))
+  expect(select).toHaveValue('t1')
 })

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { listRepos, patchRepo, type ApiError, type Repo } from '../api'
+import { listRepos, listTemplates, patchRepo, type ApiError, type Repo, type RepoPatch, type Template } from '../api'
 import CardBrand from './CardBrand'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
@@ -51,6 +51,7 @@ export default function Repos() {
   // Per-row state: which repo has a PATCH in flight, and the last failure for each.
   const [saving, setSaving] = useState<Record<string, boolean>>({})
   const [rowError, setRowError] = useState<Record<string, string>>({})
+  const [templates, setTemplates] = useState<Template[]>([])
 
   useEffect(() => {
     let live = true
@@ -62,13 +63,24 @@ export default function Repos() {
     }
   }, [attempt])
 
+  // The picker is a nicety: if templates do not load, rows show only the built-in one.
+  useEffect(() => {
+    let live = true
+    listTemplates()
+      .then((v) => live && setTemplates(v.templates ?? []))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
+
   const retry = () => {
     setError(undefined)
     setAttempt((n) => n + 1)
   }
 
   // Flip at once, hold the row while it saves, and put it back with the reason if it fails.
-  async function toggle(r: Repo, p: { enabled?: boolean; allowPrerelease?: boolean }) {
+  async function toggle(r: Repo, p: Pick<RepoPatch, 'enabled' | 'allowPrerelease' | 'templateId'>) {
     const put = (next: Repo) => setRepos((rs) => rs?.map((x) => (x.id === next.id ? next : x)))
     setRowError((m) => ({ ...m, [r.id]: '' }))
     setSaving((m) => ({ ...m, [r.id]: true }))
@@ -146,6 +158,23 @@ export default function Repos() {
                   onChange={(v) => toggle(r, { allowPrerelease: v })}
                 />
               </span>
+              <label className="rp-template">
+                <span>Template</span>
+                <select
+                  className="field"
+                  value={r.templateId}
+                  disabled={saving[r.id]}
+                  aria-label={`Template for ${r.fullName}`}
+                  onChange={(e) => toggle(r, { templateId: e.target.value })}
+                >
+                  <option value="">Built-in</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <CardBrand repo={r} onSaved={(next) => setRepos((rs) => rs?.map((x) => (x.id === next.id ? next : x)))} />
               {rowError[r.id] && (
                 <span className="rp-row-error" role="alert">

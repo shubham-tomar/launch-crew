@@ -25,6 +25,8 @@ type Repo struct {
 	Accent     string `json:"accent"`
 	Background string `json:"background"`
 	Text       string `json:"text"`
+	// TemplateID is the template its release launches use, "" for the built-in default.
+	TemplateID string `json:"templateId"`
 }
 
 // RepoPatch changes a repo's flags; nil fields are left alone.
@@ -36,6 +38,8 @@ type RepoPatch struct {
 	Accent     *string `json:"accent"`
 	Background *string `json:"background"`
 	Text       *string `json:"text"`
+	// TemplateID picks the template for its release launches; "" is the built-in default.
+	TemplateID *string `json:"templateId"`
 }
 
 // brandingPatch reports whether p touches the card branding.
@@ -44,7 +48,11 @@ func (p RepoPatch) brandingPatch() bool {
 }
 
 func repoOf(r sqlc.Repo) Repo {
-	return Repo{ID: r.ID, FullName: r.FullName, Enabled: r.Enabled, AllowPrerelease: r.AllowPrerelease, LogoURL: r.LogoUrl, Accent: r.Accent, Background: r.CardBg, Text: r.CardText}
+	out := Repo{ID: r.ID, FullName: r.FullName, Enabled: r.Enabled, AllowPrerelease: r.AllowPrerelease, LogoURL: r.LogoUrl, Accent: r.Accent, Background: r.CardBg, Text: r.CardText}
+	if r.TemplateID.Valid {
+		out.TemplateID = r.TemplateID.UUID.String()
+	}
+	return out
 }
 
 // Repos lists the captain's repos by name.
@@ -69,6 +77,15 @@ func UpdateRepo(ctx context.Context, d Deps, userID, repoID uuid.UUID, p RepoPat
 	if p.brandingPatch() {
 		if r, err = updateBranding(ctx, d, r, p); err != nil {
 			return Repo{}, err
+		}
+	}
+	if p.TemplateID != nil {
+		ref, err := templateRef(ctx, d, userID, *p.TemplateID)
+		if err != nil {
+			return Repo{}, err
+		}
+		if r, err = d.Q.SetRepoTemplate(ctx, sqlc.SetRepoTemplateParams{ID: r.ID, TemplateID: ref}); err != nil {
+			return Repo{}, fmt.Errorf("launch: set repo template: %w", err)
 		}
 	}
 	if p.Enabled == nil && p.AllowPrerelease == nil {

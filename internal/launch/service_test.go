@@ -1129,10 +1129,92 @@ func TestLateLaunchJobQueuesCaptainPosts(t *testing.T) {
 	}
 }
 
+func TestCommentWithoutTemplateIsTheBuiltIn(t *testing.T) {
+	e := setup(t)
+	// A template the launch does not use changes nothing.
+	if _, err := launch.CreateTemplate(e.ctx, e.deps, e.owner.ID, launch.TemplateInput{Name: "Other", CommentTemplate: "Hi {captain}, tap {link}"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := launch.Launch(e.ctx, e.deps, e.launch.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.drain(t); err != nil {
+		t.Fatal(err)
+	}
+	cs := e.gh.IssueComments(int(e.alice.PrNumber.Int32))
+	if len(cs) != 1 || strings.HasPrefix(cs[0].Body, "Hi ") {
+		t.Fatalf("built-in comment expected: %+v", cs)
+	}
+}
+
+func TestTemplatesCRUD(t *testing.T) {
+	e := setup(t)
+	str := func(s string) *string { return &s }
+	a, err := launch.CreateTemplate(e.ctx, e.deps, e.owner.ID, launch.TemplateInput{Name: " Meetups ", DraftNotes: "Mention the Discord."})
+	if err != nil || a.Name != "Meetups" || a.Preview == "" {
+		t.Fatalf("create: %+v %v", a, err)
+	}
+	for _, in := range []launch.TemplateInput{
+		{Name: ""},
+		{Name: "meetups"},
+		{Name: "No link", CommentTemplate: "Thanks!"},
+		{Name: strings.Repeat("x", 41)},
+		{Name: "Long notes", DraftNotes: strings.Repeat("x", 601)},
+	} {
+		if _, err := launch.CreateTemplate(e.ctx, e.deps, e.owner.ID, in); !errors.Is(err, launch.ErrInvalid) {
+			t.Fatalf("%+v: %v", in, err)
+		}
+	}
+	b, err := launch.UpdateTemplate(e.ctx, e.deps, e.owner.ID, a.ID, launch.TemplateInput{Name: "Talks", DraftNotes: "Tag the venue."})
+	if err != nil || b.Name != "Talks" || b.DraftNotes != "Tag the venue." {
+		t.Fatalf("update: %+v %v", b, err)
+	}
+	if _, err := launch.UpdateTemplate(e.ctx, e.deps, uuid.New(), a.ID, launch.TemplateInput{Name: "x"}); !errors.Is(err, launch.ErrNotFound) {
+		t.Fatalf("stranger update: %v", err)
+	}
+	v, err := launch.Templates(e.ctx, e.deps, e.owner.ID)
+	if err != nil || len(v.Templates) != 1 || v.DefaultComment == "" || v.DefaultPreview == "" {
+		t.Fatalf("list: %+v %v", v, err)
+	}
+	// A repo can point at it; a stranger's or made-up id is refused.
+	r, err := launch.UpdateRepo(e.ctx, e.deps, e.owner.ID, e.repo.ID, launch.RepoPatch{TemplateID: str(a.ID.String())})
+	if err != nil || r.TemplateID != a.ID.String() {
+		t.Fatalf("repo template: %+v %v", r, err)
+	}
+	if _, err := launch.UpdateRepo(e.ctx, e.deps, e.owner.ID, e.repo.ID, launch.RepoPatch{TemplateID: str(uuid.NewString())}); !errors.Is(err, launch.ErrInvalid) {
+		t.Fatalf("unknown template: %v", err)
+	}
+	// Deleting it puts the repo back on the built-in default.
+	if err := launch.DeleteTemplate(e.ctx, e.deps, e.owner.ID, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := launch.DeleteTemplate(e.ctx, e.deps, e.owner.ID, a.ID); !errors.Is(err, launch.ErrNotFound) {
+		t.Fatalf("second delete: %v", err)
+	}
+	if row, _ := e.q.GetRepo(e.ctx, e.repo.ID); row.TemplateID.Valid {
+		t.Fatalf("repo kept a deleted template")
+	}
+}
+
+func TestQRPreviewDraws(t *testing.T) {
+	e := setup(t)
+	png, err := launch.QRPreview(e.ctx, e.deps, "Go meetup", "plane", "")
+	if err != nil || len(png) == 0 {
+		t.Fatalf("preview: %v", err)
+	}
+	if _, err := launch.QRPreview(e.ctx, e.deps, "", "custom", "ftp://x"); !errors.Is(err, launch.ErrInvalid) {
+		t.Fatalf("bad custom: %v", err)
+	}
+}
+
 func TestCommentUsesTheCaptainsTemplate(t *testing.T) {
 	e := setup(t)
 	tmpl := "{captain} just cut {project} {version}, thanks for {credited}. Tap {link}"
-	if _, err := launch.SaveSettings(e.ctx, e.deps, e.owner.ID, launch.SettingsPatch{CommentTemplate: &tmpl}); err != nil {
+	saved, err := launch.CreateTemplate(e.ctx, e.deps, e.owner.ID, launch.TemplateInput{Name: "Release", CommentTemplate: tmpl})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.pool.Exec(e.ctx, `UPDATE launches SET template_id = $2 WHERE id = $1`, e.launch.ID, saved.ID); err != nil {
 		t.Fatal(err)
 	}
 	if err := launch.Launch(e.ctx, e.deps, e.launch.ID); err != nil {
