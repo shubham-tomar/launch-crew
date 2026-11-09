@@ -204,13 +204,28 @@ function useFold() {
       el.style.zIndex = String(over(i) ? 100 + i : parts.length - i)
       el.classList.toggle('home-fold-over', over(i))
     })
+    // In-page links (#how and so on) would line up a part's rotated box, which a
+    // folded part pushes far from its crease; scroll to its layout top instead.
+    const jump = (e: MouseEvent) => {
+      const a = (e.target as Element | null)?.closest?.('a[href^="#"]')
+      const id = a?.getAttribute('href')?.slice(1)
+      const at = id ? parts.findIndex((el) => el.id === id) : -1
+      if (at < 0) return
+      e.preventDefault()
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      window.scrollTo({ top: creases[at] - 16, behavior: reduce ? 'auto' : 'smooth' })
+      history.replaceState(null, '', `#${id}`)
+    }
+
     measure()
     tick()
+    document.addEventListener('click', jump)
     window.addEventListener('scroll', queue, { passive: true })
     window.addEventListener('resize', remeasure)
     document.fonts?.ready.then(remeasure) // web fonts can shift the layout after first paint
     return () => {
       live = false
+      document.removeEventListener('click', jump)
       cancelAnimationFrame(frame)
       window.removeEventListener('scroll', queue)
       window.removeEventListener('resize', remeasure)
