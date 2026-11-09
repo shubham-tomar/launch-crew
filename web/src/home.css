@@ -648,6 +648,72 @@
   color: inherit;
 }
 
+/* Unfolding on scroll. home-fold is added by script only when motion is fine, so
+   without it every part is simply shown. The tear line draws first, then the part
+   folds down from it, then its cards follow one by one. */
+.home-fold > .home-perf {
+  background-size: 0 2px;
+  transition: background-size 0.7s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+
+.home-fold > .home-perf.is-in {
+  background-size: calc(100% - 28px) 2px;
+}
+
+.home-fold > .home-section {
+  opacity: 0;
+  transform: perspective(1400px) rotateX(-9deg) translateY(28px);
+  transform-origin: top center;
+  transition:
+    opacity 0.6s ease 0.15s,
+    transform 0.8s cubic-bezier(0.2, 0.75, 0.2, 1) 0.15s;
+}
+
+.home-fold > .home-section.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+.home-fold > .home-section :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > * {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 0.5s ease,
+    transform 0.6s cubic-bezier(0.2, 0.75, 0.2, 1);
+}
+
+.home-fold > .home-section.is-in :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > * {
+  opacity: 1;
+  transform: none;
+}
+
+.home-fold > .home-section.is-in :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > :nth-child(1) {
+  transition-delay: 0.35s;
+}
+
+.home-fold > .home-section.is-in :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > :nth-child(2) {
+  transition-delay: 0.45s;
+}
+
+.home-fold > .home-section.is-in :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > :nth-child(3) {
+  transition-delay: 0.55s;
+}
+
+.home-fold > .home-section.is-in :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > :nth-child(4) {
+  transition-delay: 0.65s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-fold > .home-perf,
+  .home-fold > .home-section,
+  .home-fold > .home-section :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > * {
+    opacity: 1;
+    transform: none;
+    transition: none;
+    background-size: calc(100% - 28px) 2px;
+  }
+}
+
 @media (width < 48rem) {
   .home-voice {
     grid-template-columns: 1fr;

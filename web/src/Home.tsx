@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import NavPill from './components/NavPill'
 import Pass from './components/Pass'
 import Plane from './components/Plane'
@@ -96,8 +96,40 @@ const PREFLIGHT = [
   'Buffer rate headroom',
 ]
 
+// Unfolds each part of the pass as it scrolls into view: the tear line draws, then
+// the section folds down from it. Skipped for reduced motion or without
+// IntersectionObserver, so the page is always readable.
+function useUnfold() {
+  const ticket = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const root = ticket.current
+    if (!root || typeof IntersectionObserver !== 'function') return
+    if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const parts = Array.from(root.querySelectorAll<HTMLElement>(':scope > .home-section, :scope > .home-perf'))
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue
+          e.target.classList.add('is-in')
+          io.unobserve(e.target)
+        }
+      },
+      { rootMargin: '0px 0px -12% 0px', threshold: 0.08 },
+    )
+    root.classList.add('home-fold')
+    for (const el of parts) io.observe(el)
+    return () => {
+      io.disconnect()
+      root.classList.remove('home-fold')
+      for (const el of parts) el.classList.remove('is-in')
+    }
+  }, [])
+  return ticket
+}
+
 // Public root: what this is, how it works, and the way in.
 export default function Home() {
+  const ticket = useUnfold()
   return (
     <main className="home">
       <div className="home-wrap">
@@ -113,7 +145,7 @@ export default function Home() {
           end={<a className="btn btn-primary" href={SIGN_IN}>Sign in with Buffer</a>}
         />
 
-        <div className="home-ticket">
+        <div className="home-ticket" ref={ticket}>
         <header className="home-hero">
           <div className="home-hero-copy">
             <span className="eyebrow">Releases · meetups · launches</span>

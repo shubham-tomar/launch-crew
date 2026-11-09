@@ -46,6 +46,12 @@ test('home', async ({ browser }) => {
   const { ctx, page } = await open(browser, undefined)
   await scan(page, '/', async (p) => {
     await expect(p.getByRole('link', { name: 'Sign in with Buffer' }).first()).toBeVisible()
+    // Parts of the page unfold as they scroll into view; scan them as a reader sees them, unfolded.
+    for (const s of await p.locator('.home-ticket > .home-section').all()) {
+      await s.scrollIntoViewIfNeeded()
+      await expect(s).toHaveClass(/is-in/)
+    }
+    await p.waitForTimeout(1500)
   })
   await ctx.close()
 })
