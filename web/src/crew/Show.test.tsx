@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import App from '../App'
@@ -37,7 +37,10 @@ test('show page: no chrome, QR of the short link, download link', async () => {
   expect(screen.getByText('https://lc.test/l/open1')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Download PNG' })).toHaveAttribute('href', '/api/l/open1/show.png')
   expect(screen.queryByRole('radiogroup')).toBeNull()
-  expect(toCanvas).toHaveBeenCalledWith(expect.anything(), 'https://lc.test/l/open1', expect.objectContaining({ errorCorrectionLevel: 'H' }))
+  // The QR is drawn in an effect after the page renders; on a slow runner that can land a tick later.
+  await waitFor(() =>
+    expect(toCanvas).toHaveBeenCalledWith(expect.anything(), 'https://lc.test/l/open1', expect.objectContaining({ errorCorrectionLevel: 'H' })),
+  )
 })
 
 test('show page uses the show endpoint and notes a failed QR draw', async () => {
