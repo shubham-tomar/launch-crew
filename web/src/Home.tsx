@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import NavPill from './components/NavPill'
 import Pass from './components/Pass'
 import Plane from './components/Plane'
+import ServiceIcon from './components/ServiceIcon'
 import SchemeSwitch from './components/SchemeSwitch'
 import Wordmark from './components/Wordmark'
 import './home.css'
@@ -16,6 +17,11 @@ function Tick({ warn }: { warn?: boolean }) {
   )
 }
 
+// A tear line between two parts of the pass, with a notch of the page at each edge.
+function Perf() {
+  return <div className="perf perf-h home-perf" aria-hidden="true" />
+}
+
 function Section({ id, className, children }: { id?: string; className?: string; children: ReactNode }) {
   return (
     <section id={id} className={['home-section', className].filter(Boolean).join(' ')}>
@@ -25,13 +31,43 @@ function Section({ id, className, children }: { id?: string; className?: string;
 }
 
 const PROBLEMS = [
-  ['One account posts.', 'The notes go out once, from the org, and that is the whole launch.'],
+  ['One account posts.', 'The announcement goes out once, from the org or the organiser, and that is the whole launch.'],
   ['Everyone else reposts it.', 'The same sentence, in nine feeds, in nine voices that all sound like one.'],
-  ['Or they stay quiet.', 'Writing your own take means a blank box and ten minutes nobody has on release day.'],
+  ['Or they stay quiet.', 'Writing your own take means a blank box and ten minutes nobody has on the day.'],
+]
+
+// The three ways a launch starts. Each ends the same way: a draft per person, approved into their own Buffer.
+const WAYS: { tag: string; title: string; body: string; who: string }[] = [
+  {
+    tag: 'GitHub release',
+    title: 'Ship a release',
+    body: 'Publish a release and a draft launch is waiting. The crew is everyone with a merged PR in it, and each gets a comment on their PR with their invite.',
+    who: 'Contributor · Reviewer · Maintainer',
+  },
+  {
+    tag: 'Meetup or talk',
+    title: 'Put a QR on the screen',
+    body: 'Show the event slide at the end of your talk. People scan it, join the crew and get a draft about what they heard, in their own words.',
+    who: 'Speaker · Organiser · Attendee',
+  },
+  {
+    tag: 'Manual launch',
+    title: 'Share one link',
+    body: 'Launching a product, a post or anything else? Write the key facts once, share the link, and everyone you send it to posts their own take.',
+    who: 'Your team · friends · users',
+  },
+]
+
+// What the captain gets beyond the drafts.
+const CAPTAIN: { title: string; body: string }[] = [
+  { title: 'Your look on every card', body: 'Logo, background, text and accent per repo, with a live preview before you save.' },
+  { title: 'Templates', body: 'Name a few: the PR comment and the notes the drafts follow. Pick one per repo or per launch.' },
+  { title: 'See every post land', body: 'Once a post goes out, the crew list links straight to it. One that failed is flagged.' },
+  { title: 'Preflight', body: 'Limits, network rules and card images are checked before the launch button turns on.' },
 ]
 
 const STEPS = [
-  ['Release detected', 'A GitHub release lands. The crew comes from the merged PRs, or you start from a meetup, a talk, or a manual launch.'],
+  ['A launch starts', 'A GitHub release lands, a QR goes up at your talk, or you share a link. The crew forms from there.'],
   ['Drafts built in each voice', "One draft per person, written from that person's own past posts. Their role changes how it opens."],
   ['Crew approves on their phone', 'One link, one tap. They can edit it first, or not send it at all.'],
   ["Everyone's queue fills", "Each approved post goes into that person's own Buffer queue, spread across the launch window."],
@@ -68,20 +104,23 @@ export default function Home() {
         <NavPill
           links={
             <>
-              <li><a href="#why">Why</a></li>
+              <li><a href="#ways">Ways to launch</a></li>
               <li><a href="#how">How it works</a></li>
+              <li><a href="#captain">For captains</a></li>
               <li><a href="#privacy">Privacy</a></li>
             </>
           }
           end={<a className="btn btn-primary" href={SIGN_IN}>Sign in with Buffer</a>}
         />
 
+        <div className="home-ticket">
         <header className="home-hero">
           <div className="home-hero-copy">
-            <span className="eyebrow">For release day</span>
-            <h1 className="home-title">One release. Nine people. Nine posts, all theirs.</h1>
+            <span className="eyebrow">Releases · meetups · launches</span>
+            <h1 className="home-title">One launch. Nine people. Nine posts, all theirs.</h1>
             <p className="home-lede">
-              Each person who helped ship it gets a draft written in their own voice, from their own past posts, and approves it into their own Buffer queue.
+              A GitHub release, a meetup talk or a launch of your own. Everyone who was part of it gets a draft in their own voice, from their own past
+              posts, and approves it into their own Buffer queue.
             </p>
             <div className="home-cta">
               <a className="btn btn-primary" href={SIGN_IN}>
@@ -111,12 +150,29 @@ export default function Home() {
                 />
               </div>
             </div>
-            <p className="home-stack-note">Every contributor gets a card like this, 1200 × 630, attached to their post.</p>
+            <p className="home-stack-note">Everyone gets a card like this, 1200 × 630, attached to their post.</p>
           </div>
         </header>
 
+        <Perf />
+        <Section id="ways">
+          <h2 className="home-h2">Three ways to start a launch</h2>
+          <ol className="home-ways">
+            {WAYS.map((w) => (
+              <li className="panel home-way" key={w.tag}>
+                <span className="eyebrow">{w.tag}</span>
+                <h3 className="home-h3">{w.title}</h3>
+                <p>{w.body}</p>
+                <span className="home-way-who">{w.who}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="home-quiet">However it starts, it ends the same way: one draft per person, and nothing posts without their tap.</p>
+        </Section>
+
+        <Perf />
         <Section id="why">
-          <h2 className="home-h2">Release day usually looks like this</h2>
+          <h2 className="home-h2">Launch day usually looks like this</h2>
           <ol className="home-problems">
             {PROBLEMS.map(([lead, body], i) => (
               <li className="panel home-problem" key={lead}>
@@ -128,6 +184,7 @@ export default function Home() {
           </ol>
         </Section>
 
+        <Perf />
         <Section id="how">
           <h2 className="home-h2">How it works</h2>
           <ol className="home-steps">
@@ -165,6 +222,7 @@ export default function Home() {
           </ol>
         </Section>
 
+        <Perf />
         <Section>
           <h2 className="home-h2">Two screens, two people</h2>
           <div className="home-two">
@@ -209,6 +267,7 @@ export default function Home() {
           </div>
         </Section>
 
+        <Perf />
         <Section>
           <div className="home-voice-head">
             <h2 className="home-h2">Written in their voice</h2>
@@ -236,6 +295,49 @@ export default function Home() {
           </div>
         </Section>
 
+        <Perf />
+        <Section id="captain">
+          <h2 className="home-h2">For the captain</h2>
+          <ul className="home-captain">
+            {CAPTAIN.map((c, i) => (
+              <li className="panel home-cap" key={c.title}>
+                <div className="home-ill" aria-hidden="true">
+                  {i === 0 && (
+                    <span className="home-swatches">
+                      {['#15181F', '#F4EFE6', '#4A45D1', '#2B643B', '#EC8669'].map((c) => (
+                        <span key={c} style={{ backgroundColor: c }} />
+                      ))}
+                    </span>
+                  )}
+                  {i === 1 && (
+                    <span className="home-tabs">
+                      <span className="home-tab home-tab-on">Big releases</span>
+                      <span className="home-tab">Meetups</span>
+                    </span>
+                  )}
+                  {i === 2 && (
+                    <span className="home-landed">
+                      <ServiceIcon service="twitter" />
+                      View on X
+                    </span>
+                  )}
+                  {i === 3 && (
+                    <span className="home-tabs">
+                      <Tick />
+                      <Tick />
+                      <Tick />
+                      <Tick warn />
+                    </span>
+                  )}
+                </div>
+                <h3 className="home-h3">{c.title}</h3>
+                <p>{c.body}</p>
+              </li>
+            ))}
+          </ul>
+        </Section>
+
+        <Perf />
         <Section id="privacy" className="home-control">
           <div className="home-control-main">
             <h2 className="home-h2">You stay in control</h2>
@@ -269,13 +371,15 @@ export default function Home() {
           </div>
         </Section>
 
+        <Perf />
         <Section className="home-final">
           <div className="home-final-copy">
-            <h2 className="home-h2 home-final-title">Run your next release as a crew.</h2>
+            <h2 className="home-h2 home-final-title">Run your next launch as a crew.</h2>
             <p>Nothing posts until each person taps approve.</p>
           </div>
           <a className="btn btn-secondary home-final-btn" href={SIGN_IN}>Sign in with Buffer</a>
         </Section>
+        </div>
 
         <footer className="home-footer">
           <Wordmark />
