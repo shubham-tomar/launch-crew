@@ -111,7 +111,7 @@ const FOLD_BEHIND = 118 // degrees: past 90, so a folded part sits behind the on
 const FOLD_OVER = 168 // degrees: nearly flat, lying face down over the part above
 const START_AT = 1 // starts opening as its crease enters the bottom of the viewport
 const OPEN_AT = 0.32 // flat once its crease is this far down the viewport
-const OVER_SPAN = 0.6 // share of the viewport scrolled while a part swings down over the front
+const MIN_SPAN = 0.25 // least share of the viewport scrolled while a part opens
 const EASE = 0.12 // share of the remaining distance covered each frame
 
 function useFold() {
@@ -137,22 +137,25 @@ function useFold() {
 
     const over = (i: number) => i % 2 === 1
 
-    // How open each part should be for the current scroll position, 0 to 1.
+    // How open each part should be for the current scroll position, 0 to 1. The
+    // parts open in turn: each begins once its crease is on screen and the part
+    // above is flat, and lands flat when its crease reaches OPEN_AT, taking at
+    // least MIN_SPAN of scrolling. So nothing opens out of order, hangs detached
+    // below a part still moving, or falls behind further down the page.
     const targets = () => {
       const vh = window.innerHeight
-      const atEnd = window.scrollY + vh >= document.documentElement.scrollHeight - 2
-      const ease = (t: number) => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3 // quick off the crease, settling flat
+      const y = window.scrollY
+      const atEnd = y + vh >= document.documentElement.scrollHeight - 2
+      let prevFlat = -Infinity // scroll position at which the part above lies flat
       return parts.map((_, i) => {
+        const begin = Math.max(prevFlat, creases[i] - vh * START_AT)
+        const span = Math.max(creases[i] - vh * OPEN_AT - begin, vh * MIN_SPAN)
+        prevFlat = begin + span
         if (atEnd) return 1
-        const top = creases[i] - window.scrollY
-        if (!over(i) || i === 0) return ease((vh * START_AT - top) / (vh * (START_AT - OPEN_AT)))
-        // A part folding over starts only once the part above is flat (its crease
-        // then sits that part's height below OPEN_AT), and takes its own
-        // OVER_SPAN of scrolling to swing down, so it never races to catch up.
-        const start = vh * OPEN_AT + (creases[i] - creases[i - 1])
-        const span = Math.max(vh * OVER_SPAN, 1)
-        const t = Math.min(1, Math.max(0, (start - top) / span))
-        return t * t * (3 - 2 * t) // ease in and out: lifts gently, swings, settles
+        const t = Math.min(1, Math.max(0, (y - begin) / span))
+        // From behind: quick off the crease, settling flat. Over the front: lifts
+        // gently, swings, settles.
+        return over(i) ? t * t * (3 - 2 * t) : 1 - (1 - t) ** 3
       })
     }
 
@@ -162,7 +165,7 @@ function useFold() {
       // Past upright, a part folding over shows the plain back of the paper, lit
       // softly; facing you, it darkens the more it is turned away.
       const back = deg > 90
-      const shade = back ? 0.08 + 0.14 * ((deg - 90) / 90) : 0.55 * Math.min(1, (1 - open) * 1.6)
+      const shade = back ? 0.06 + 0.1 * ((deg - 90) / 90) : 0.32 * Math.min(1, (1 - open) * 1.6)
       el.style.setProperty('--shade', shade.toFixed(3))
       el.style.setProperty('--back', back ? '1' : '0')
       // A part folding over is clear until it starts to move and turns solid like
