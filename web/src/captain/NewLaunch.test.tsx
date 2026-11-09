@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import NewLaunch from './NewLaunch'
@@ -150,10 +150,12 @@ test('a hero URL shows a preview, and a broken one says so', async () => {
 
 test('a picked template is sent with the launch; the built-in sends none', async () => {
   const calls = setup()
-  const select = screen.getByLabelText('Template')
-  expect(await screen.findByRole('option', { name: 'Meetups' })).toBeInTheDocument()
+  const select = screen.getByRole('combobox', { name: 'Template' })
   await userEvent.type(screen.getByLabelText('Title'), 'Go night')
-  await userEvent.selectOptions(select, 'Meetups')
+  await waitFor(() => expect(screen.getAllByRole('option', { hidden: true })).toHaveLength(2))
+  await userEvent.click(select)
+  await userEvent.keyboard('{ArrowDown}{Enter}')
+  expect(select).toHaveTextContent('Meetups')
   await userEvent.click(screen.getByRole('button', { name: 'Create launch' }))
   expect(calls.find(isCreate)?.body).toMatchObject({ title: 'Go night', templateId: 't1' })
 })

@@ -1,6 +1,11 @@
 import { render, screen, within } from '@testing-library/react'
+import { afterEach, vi } from 'vitest'
 import { MemoryRouter } from 'react-router'
 import App from './App'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 function renderHome() {
   render(
@@ -42,4 +47,25 @@ test('home names all three ways to launch and the captain tools', () => {
   for (const tag of ['GitHub release', 'Meetup or talk', 'Manual launch']) expect(ways.getByText(tag)).toBeInTheDocument()
   const captain = within(document.getElementById('captain')!)
   for (const h of ['Your look on every card', 'Templates', 'See every post land']) expect(captain.getByRole('heading', { name: h })).toBeInTheDocument()
+})
+
+test('someone already signed in is offered their launches, not another sign-in', async () => {
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({ signedIn: true, githubLogins: [] }), { status: 200 }))))
+  renderHome()
+  const open = await screen.findAllByRole('link', { name: 'Open your launches' })
+  expect(open.length).toBeGreaterThanOrEqual(2)
+  for (const a of open) expect(a).toHaveAttribute('href', '/captain')
+  expect(screen.getByRole('link', { name: 'Start a launch' })).toHaveAttribute('href', '/captain/new')
+  expect(screen.queryByRole('link', { name: 'Sign in with Buffer' })).toBeNull()
+})
+
+test('the logo goes to the homepage from the captain pages too', () => {
+  vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})))
+  render(
+    <MemoryRouter initialEntries={['/captain/templates']}>
+      <App />
+    </MemoryRouter>,
+  )
+  const nav = screen.getByRole('banner')
+  expect(within(nav).getAllByRole('link')[0]).toHaveAttribute('href', '/')
 })

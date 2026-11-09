@@ -904,3 +904,92 @@ a.btn {
   block-size: 1.75em;
   inline-size: 40%;
 }
+
+/* Select: a field-styled button that opens a list on the raised surface, in place of the system menu. */
+.select {
+  position: relative;
+  inline-size: 100%;
+}
+
+.select-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+.select-button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-chevron {
+  flex: none;
+  color: var(--color-text-muted);
+  transition: transform 160ms ease;
+}
+
+.select-button[aria-expanded="true"] .select-chevron {
+  transform: rotate(180deg);
+}
+
+.select-list {
+  position: absolute;
+  inset-block-start: calc(100% + var(--space-xs));
+  inset-inline: 0;
+  z-index: 20;
+  display: grid;
+  gap: var(--space-xs);
+  min-inline-size: 100%;
+  max-block-size: 18rem;
+  margin: 0;
+  padding: var(--space-xs);
+  overflow-y: auto;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--color-hairline);
+  border-radius: var(--rounded-sm);
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-raised);
+  list-style: none;
+}
+
+.select-list[hidden] {
+  display: none;
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-block-size: 44px;
+  padding-inline: var(--space-ms);
+  border-radius: calc(var(--rounded-sm) - 4px);
+  color: var(--color-text);
+  font-size: var(--type-draft-size);
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.select-option.is-active {
+  background-color: var(--color-tint);
+}
+
+.select-option[aria-selected="true"] {
+  color: var(--color-accent-strong);
+  font-weight: 600;
+}
+
+.select-check {
+  flex: none;
+  color: var(--color-accent);
+}

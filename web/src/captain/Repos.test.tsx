@@ -154,10 +154,11 @@ test('the branding fold draws a preview once open, and again when the accent cha
 
 test('each repo picks a template for its release launches', async () => {
   const calls = setup([repo()])
-  const select = await screen.findByLabelText('Template for acme/rocket')
-  expect(select).toHaveValue('')
-  expect(await screen.findByRole('option', { name: 'Releases' })).toBeInTheDocument()
-  await userEvent.selectOptions(select, 'Releases')
+  const select = await screen.findByRole('combobox', { name: 'Template for acme/rocket' })
+  expect(select).toHaveTextContent('Built-in')
+  await userEvent.click(select)
+  await userEvent.click(await screen.findByRole('option', { name: 'Releases' }))
   await waitFor(() => expect(calls.filter((c) => c.method === 'PATCH').at(-1)?.body).toEqual({ templateId: 't1' }))
-  expect(select).toHaveValue('t1')
+  expect(select).toHaveTextContent('Releases')
+  expect(screen.queryByRole('listbox')).toBeNull()
 })

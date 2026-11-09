@@ -15,7 +15,6 @@ export default function Frame({ children }: { children: ReactNode }) {
       </a>
       <div className="cap-top">
         <NavPill
-          home="/captain"
           links={
             <>
               <li>

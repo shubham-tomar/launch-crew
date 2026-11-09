@@ -4,6 +4,7 @@ import { createLaunch, listTemplates, previewQr, type NewLaunch as Body, type Qr
 import Alert from '../components/Alert'
 import Button from '../components/Button'
 import Pass from '../components/Pass'
+import Select from '../components/Select'
 import Frame from './Frame'
 import { asError, fromLocalInput } from './format'
 import { MAX_WINDOW, MIN_WINDOW, launchAtProblem, windowProblem } from './timing-rules'
@@ -382,14 +383,13 @@ export default function NewLaunch() {
             </fieldset>
             <div className="nl-field">
               <label htmlFor="nl-template">Template</label>
-              <select id="nl-template" className="field" value={templateId} onChange={(e) => setTemplateId(e.target.value)} aria-describedby="nl-template-hint">
-                <option value="">Built-in</option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+              <Select
+                id="nl-template"
+                value={templateId}
+                onChange={setTemplateId}
+                aria-describedby="nl-template-hint"
+                options={[{ value: '', label: 'Built-in' }, ...templates.map((t) => ({ value: t.id, label: t.name }))]}
+              />
               <span id="nl-template-hint" className="nl-hint">
                 The notes the model reads while drafting the crew's posts. <Link to="/captain/templates">Manage templates</Link>
               </span>

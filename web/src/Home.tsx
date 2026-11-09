@@ -1,4 +1,6 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Link } from 'react-router'
+import { getMe } from './api'
 import NavPill from './components/NavPill'
 import Pass from './components/Pass'
 import Plane from './components/Plane'
@@ -8,6 +10,31 @@ import Wordmark from './components/Wordmark'
 import './home.css'
 
 const SIGN_IN = '/auth/buffer/start?return_to=/captain'
+
+// Whether this browser already has a session, so the page can offer the way back in
+// instead of another sign-in. Until it answers (or if it fails) the page shows sign-in.
+function useSignedIn() {
+  const [signedIn, setSignedIn] = useState(false)
+  useEffect(() => {
+    let live = true
+    getMe()
+      .then((m) => live && setSignedIn(m.signedIn))
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [])
+  return signedIn
+}
+
+// Sign in with Buffer, or straight to the launches for someone already signed in.
+function EnterButton({ signedIn, className }: { signedIn: boolean; className: string }) {
+  return signedIn ? (
+    <Link className={className} to="/captain">Open your launches</Link>
+  ) : (
+    <a className={className} href={SIGN_IN}>Sign in with Buffer</a>
+  )
+}
 
 function Tick({ warn }: { warn?: boolean }) {
   return (
@@ -246,6 +273,7 @@ function useFold() {
 // Public root: what this is, how it works, and the way in.
 export default function Home() {
   const ticket = useFold()
+  const signedIn = useSignedIn()
   return (
     <main className="home">
       <div className="home-wrap">
@@ -258,7 +286,7 @@ export default function Home() {
               <li><a href="#privacy">Privacy</a></li>
             </>
           }
-          end={<a className="btn btn-primary" href={SIGN_IN}>Sign in with Buffer</a>}
+          end={<EnterButton signedIn={signedIn} className="btn btn-primary" />}
         />
 
         <div className="home-ticket" ref={ticket}>
@@ -271,10 +299,17 @@ export default function Home() {
               posts, and approves it into their own Buffer queue.
             </p>
             <div className="home-cta">
-              <a className="btn btn-primary" href={SIGN_IN}>
-                <Plane className="home-cta-plane" />
-                Start a launch
-              </a>
+              {signedIn ? (
+                <Link className="btn btn-primary" to="/captain/new">
+                  <Plane className="home-cta-plane" />
+                  Start a launch
+                </Link>
+              ) : (
+                <a className="btn btn-primary" href={SIGN_IN}>
+                  <Plane className="home-cta-plane" />
+                  Start a launch
+                </a>
+              )}
               <a className="btn btn-secondary" href="#how">See how it works</a>
             </div>
             <p className="home-assure">Nothing posts until each person taps approve. Sign-in is with Buffer.</p>
@@ -518,7 +553,7 @@ export default function Home() {
             <h2 className="home-h2 home-final-title">Run your next launch as a crew.</h2>
             <p>Nothing posts until each person taps approve.</p>
           </div>
-          <a className="btn btn-secondary home-final-btn" href={SIGN_IN}>Sign in with Buffer</a>
+          <EnterButton signedIn={signedIn} className="btn btn-secondary home-final-btn" />
         </Section>
         </div>
 

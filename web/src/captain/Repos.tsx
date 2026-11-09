@@ -3,6 +3,7 @@ import { listRepos, listTemplates, patchRepo, type ApiError, type Repo, type Rep
 import CardBrand from './CardBrand'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
+import Select from '../components/Select'
 import { SkeletonPanel } from '../components/Skeleton'
 import Frame from './Frame'
 import { asError } from './format'
@@ -158,23 +159,16 @@ export default function Repos() {
                   onChange={(v) => toggle(r, { allowPrerelease: v })}
                 />
               </span>
-              <label className="rp-template">
-                <span>Template</span>
-                <select
-                  className="field"
+              <div className="rp-template">
+                <span aria-hidden="true">Template</span>
+                <Select
                   value={r.templateId}
                   disabled={saving[r.id]}
                   aria-label={`Template for ${r.fullName}`}
-                  onChange={(e) => toggle(r, { templateId: e.target.value })}
-                >
-                  <option value="">Built-in</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  options={[{ value: '', label: 'Built-in' }, ...templates.map((t) => ({ value: t.id, label: t.name }))]}
+                  onChange={(v) => toggle(r, { templateId: v })}
+                />
+              </div>
               <CardBrand repo={r} onSaved={(next) => setRepos((rs) => rs?.map((x) => (x.id === next.id ? next : x)))} />
               {rowError[r.id] && (
                 <span className="rp-row-error" role="alert">

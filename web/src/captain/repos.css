@@ -377,7 +377,7 @@
   color: var(--color-text-muted);
 }
 
-.rp-template select {
+.rp-template .select {
   inline-size: auto;
   min-inline-size: 12rem;
 }
