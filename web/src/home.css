@@ -1,6 +1,6 @@
 .home {
   min-block-size: 100vh;
-  overflow-x: clip; /* a part folded toward you is wider than the page */
+  overflow: clip; /* a folded part can reach past the page; it must not add scroll room */
   padding-block: var(--space-md) var(--space-3xl);
   padding-inline: clamp(var(--space-md), 4vw, var(--space-xl));
 }
@@ -670,12 +670,13 @@
 }
 
 /* Paper fold. home-fold is added by script only when motion is fine; the script
-   sets --fold (degrees) and --shade (0 to 1) from scroll position. Each part hangs
+   sets --fold (degrees), --shade (0 to 1) and --back from scroll position. Each part hangs
    from the crease at its top edge and swings down, alternately from behind the
    part above (far edge darkest) and over its front (crease darkest). The
    hero sits above every part, so a tucked part stays hidden behind it. */
 .home-fold {
   overflow: visible;
+  overflow-anchor: none; /* folding parts must not make the browser shift the scroll */
   background-color: transparent;
   box-shadow: none;
 }
@@ -710,8 +711,27 @@
   border-radius: inherit;
 }
 
-/* Folding down over the front, the crease is the shadowed edge. */
+/* Folding down over the front: invisible until its turn, then it fades in like
+   glass as it swings down from the top, its plain back showing until it passes
+   upright; the crease is shadowed. */
+.home-fold > .home-fold-over {
+  backface-visibility: visible;
+  opacity: var(--glass, 1);
+}
+
+.home-fold > .home-fold-over::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  background-color: var(--color-tint);
+  opacity: var(--back, 0);
+}
+
 .home-fold > .home-fold-over::after {
+  z-index: 2;
   background-image: linear-gradient(to bottom, rgb(0 0 0 / var(--shade, 0)), rgb(0 0 0 / calc(var(--shade, 0) * 0.25)));
 }
 

@@ -102,14 +102,16 @@ const PREFLIGHT = [
 // The page unfolds like a paper pass, accordion style. Each part hangs from the
 // crease at the bottom of the part above and swings down from its top edge as
 // it scrolls up the screen, flat by OPEN_AT. Parts alternate: one comes from
-// behind the part above, the next folds down over its front, from the top. The
+// behind the part above, the next waits until that part is flat and then swings
+// down over its front from the top, fading in from clear like glass. The
 // angle follows scroll position, eased toward it each frame so it glides
 // rather than jumps; scrolling back folds it away again. Skipped for reduced
 // motion, so the page is always flat and readable.
 const FOLD_BEHIND = 118 // degrees: past 90, so a folded part sits behind the one above
-const FOLD_OVER = 100 // degrees: past 90, so a folded part lies over the one above
+const FOLD_OVER = 168 // degrees: nearly flat, lying face down over the part above
 const START_AT = 1 // starts opening as its crease enters the bottom of the viewport
 const OPEN_AT = 0.32 // flat once its crease is this far down the viewport
+const OVER_SPAN = 0.6 // share of the viewport scrolled while a part swings down over the front
 const EASE = 0.12 // share of the remaining distance covered each frame
 
 function useFold() {
@@ -121,24 +123,51 @@ function useFold() {
     const parts = Array.from(root.querySelectorAll<HTMLElement>(':scope > .home-section'))
     const shown = parts.map(() => -1) // eased openness per part; -1 until first drawn
     let frame = 0
+    // Where each crease sits on the page. Measured from layout (offsetTop), which the
+    // fold's own rotation doesn't change; getBoundingClientRect would report the
+    // rotated box and open a flipped part far too early.
+    let creases: number[] = []
+    const measure = () => {
+      creases = parts.map((el) => {
+        let y = 0
+        for (let e: HTMLElement | null = el; e; e = e.offsetParent as HTMLElement | null) y += e.offsetTop
+        return y
+      })
+    }
+
+    const over = (i: number) => i % 2 === 1
 
     // How open each part should be for the current scroll position, 0 to 1.
     const targets = () => {
       const vh = window.innerHeight
       const atEnd = window.scrollY + vh >= document.documentElement.scrollHeight - 2
-      return parts.map((el) => {
+      const ease = (t: number) => 1 - (1 - Math.min(1, Math.max(0, t))) ** 3 // quick off the crease, settling flat
+      return parts.map((_, i) => {
         if (atEnd) return 1
-        const top = el.getBoundingClientRect().top
-        const t = Math.min(1, Math.max(0, (vh * START_AT - top) / (vh * (START_AT - OPEN_AT))))
-        return 1 - (1 - t) ** 3 // ease out: quick off the crease, settling flat
+        const top = creases[i] - window.scrollY
+        if (!over(i) || i === 0) return ease((vh * START_AT - top) / (vh * (START_AT - OPEN_AT)))
+        // A part folding over starts only once the part above is flat (its crease
+        // then sits that part's height below OPEN_AT), and takes its own
+        // OVER_SPAN of scrolling to swing down, so it never races to catch up.
+        const start = vh * OPEN_AT + (creases[i] - creases[i - 1])
+        const span = Math.max(vh * OVER_SPAN, 1)
+        const t = Math.min(1, Math.max(0, (start - top) / span))
+        return t * t * (3 - 2 * t) // ease in and out: lifts gently, swings, settles
       })
     }
 
-    const over = (i: number) => i % 2 === 1
     const paint = (el: HTMLElement, open: number, i: number) => {
       const deg = (over(i) ? FOLD_OVER : -FOLD_BEHIND) * (1 - open)
       el.style.setProperty('--fold', `${deg.toFixed(2)}deg`)
-      el.style.setProperty('--shade', `${(0.55 * Math.min(1, (1 - open) * 1.6)).toFixed(3)}`)
+      // Past upright, a part folding over shows the plain back of the paper, lit
+      // softly; facing you, it darkens the more it is turned away.
+      const back = deg > 90
+      const shade = back ? 0.08 + 0.14 * ((deg - 90) / 90) : 0.55 * Math.min(1, (1 - open) * 1.6)
+      el.style.setProperty('--shade', shade.toFixed(3))
+      el.style.setProperty('--back', back ? '1' : '0')
+      // A part folding over is clear until it starts to move and turns solid like
+      // glass catching the light as it swings down; one from behind is always solid.
+      el.style.setProperty('--glass', over(i) ? Math.min(1, open / 0.45).toFixed(3) : '1')
       el.classList.toggle('is-in', open === 1)
     }
 
@@ -159,6 +188,12 @@ function useFold() {
     const queue = () => {
       if (!frame) frame = requestAnimationFrame(tick)
     }
+    let live = true
+    const remeasure = () => {
+      if (!live) return
+      measure()
+      queue()
+    }
 
     root.classList.add('home-fold')
     parts.forEach((el, i) => {
@@ -166,17 +201,22 @@ function useFold() {
       el.style.zIndex = String(over(i) ? 100 + i : parts.length - i)
       el.classList.toggle('home-fold-over', over(i))
     })
+    measure()
     tick()
     window.addEventListener('scroll', queue, { passive: true })
-    window.addEventListener('resize', queue)
+    window.addEventListener('resize', remeasure)
+    document.fonts?.ready.then(remeasure) // web fonts can shift the layout after first paint
     return () => {
+      live = false
       cancelAnimationFrame(frame)
       window.removeEventListener('scroll', queue)
-      window.removeEventListener('resize', queue)
+      window.removeEventListener('resize', remeasure)
       root.classList.remove('home-fold')
       for (const el of parts) {
         el.style.removeProperty('--fold')
         el.style.removeProperty('--shade')
+        el.style.removeProperty('--back')
+        el.style.removeProperty('--glass')
         el.style.removeProperty('z-index')
         el.classList.remove('is-in', 'home-fold-over')
       }
