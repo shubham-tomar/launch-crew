@@ -1,5 +1,6 @@
 .home {
   min-block-size: 100vh;
+  overflow-x: clip; /* a part folded toward you is wider than the page */
   padding-block: var(--space-md) var(--space-3xl);
   padding-inline: clamp(var(--space-md), 4vw, var(--space-xl));
 }
@@ -38,14 +39,21 @@
   overflow: clip;
 }
 
+/* Each part's tear line sits on its bottom edge, full width, under the padding. */
 .home-perf {
   display: block;
+  grid-column: 1 / -1;
+  margin-block: calc(var(--home-pad) - var(--home-gap)) calc(-1 * var(--home-pad));
+  margin-inline: calc(-1 * var(--home-pad));
 }
 
 .home-section {
+  --home-pad: clamp(var(--space-lg), 4vw, var(--space-2xl));
+  --home-gap: var(--space-lg);
+
   display: grid;
-  gap: var(--space-lg);
-  padding: clamp(var(--space-lg), 4vw, var(--space-2xl));
+  gap: var(--home-gap);
+  padding: var(--home-pad);
   scroll-margin-block-start: var(--space-lg);
 }
 
@@ -92,11 +100,21 @@
 
 /* Hero */
 .home-hero {
+  --home-pad: clamp(var(--space-lg), 4vw, var(--space-2xl));
+  --home-gap: var(--space-2xl);
+
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
-  gap: var(--space-2xl);
+  grid-template-columns: 1fr;
+  gap: var(--home-gap);
   align-items: center;
-  padding: clamp(var(--space-lg), 4vw, var(--space-2xl));
+  padding: var(--home-pad);
+}
+
+/* Two columns once both halves fit; fixed, so the full-width tear line adds no column. */
+@media (width >= 50rem) {
+  .home-hero {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .home-hero-copy {
@@ -540,8 +558,9 @@
 
 /* Control */
 .home-control {
+  --home-gap: var(--space-xl);
+
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
-  gap: var(--space-xl);
   align-items: start;
 }
 
@@ -603,6 +622,8 @@
   align-items: center;
   gap: var(--space-lg);
   padding: clamp(var(--space-lg), 5vw, var(--space-3xl));
+  border-end-start-radius: var(--rounded-lg);
+  border-end-end-radius: var(--rounded-lg);
   background-color: var(--color-primary);
   color: var(--color-on-primary);
 }
@@ -648,70 +669,45 @@
   color: inherit;
 }
 
-/* Unfolding on scroll. home-fold is added by script only when motion is fine, so
-   without it every part is simply shown. The tear line draws first, then the part
-   folds down from it, then its cards follow one by one. */
-.home-fold > .home-perf {
-  background-size: 0 2px;
-  transition: background-size 0.7s cubic-bezier(0.3, 0.7, 0.2, 1);
+/* Paper fold. home-fold is added by script only when motion is fine; the script
+   sets --fold (degrees) and --shade (0 to 1) from scroll position. Each part hangs
+   from the crease at its top edge and swings down from behind the part above,
+   so the far (bottom) edge, with its tear line, is darkest while it opens. The
+   hero sits above every part, so a tucked part stays hidden behind it. */
+.home-fold {
+  overflow: visible;
+  background-color: transparent;
+  box-shadow: none;
 }
 
-.home-fold > .home-perf.is-in {
-  background-size: calc(100% - 28px) 2px;
+.home-fold > .home-hero {
+  position: relative;
+  z-index: 60;
+  border-start-start-radius: var(--rounded-lg);
+  border-start-end-radius: var(--rounded-lg);
+  background-color: var(--color-surface);
 }
 
 .home-fold > .home-section {
-  opacity: 0;
-  transform: perspective(1400px) rotateX(-9deg) translateY(28px);
+  position: relative;
+  background-color: var(--color-surface);
+  transform: perspective(1800px) rotateX(var(--fold, 0deg));
   transform-origin: top center;
-  transition:
-    opacity 0.6s ease 0.15s,
-    transform 0.8s cubic-bezier(0.2, 0.75, 0.2, 1) 0.15s;
+  backface-visibility: hidden;
+  will-change: transform;
 }
 
-.home-fold > .home-section.is-in {
-  opacity: 1;
-  transform: none;
+.home-fold > .home-final {
+  background-color: var(--color-primary);
 }
 
-.home-fold > .home-section :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > * {
-  opacity: 0;
-  transform: translateY(14px);
-  transition:
-    opacity 0.5s ease,
-    transform 0.6s cubic-bezier(0.2, 0.75, 0.2, 1);
-}
-
-.home-fold > .home-section.is-in :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > * {
-  opacity: 1;
-  transform: none;
-}
-
-.home-fold > .home-section.is-in :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > :nth-child(1) {
-  transition-delay: 0.35s;
-}
-
-.home-fold > .home-section.is-in :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > :nth-child(2) {
-  transition-delay: 0.45s;
-}
-
-.home-fold > .home-section.is-in :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > :nth-child(3) {
-  transition-delay: 0.55s;
-}
-
-.home-fold > .home-section.is-in :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > :nth-child(4) {
-  transition-delay: 0.65s;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .home-fold > .home-perf,
-  .home-fold > .home-section,
-  .home-fold > .home-section :is(.home-ways, .home-problems, .home-steps, .home-captain, .home-two, .home-voice) > * {
-    opacity: 1;
-    transform: none;
-    transition: none;
-    background-size: calc(100% - 28px) 2px;
-  }
+.home-fold > .home-section::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(to bottom, rgb(0 0 0 / calc(var(--shade, 0) * 0.25)), rgb(0 0 0 / var(--shade, 0)));
+  border-radius: inherit;
 }
 
 @media (width < 48rem) {

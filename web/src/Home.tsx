@@ -22,10 +22,13 @@ function Perf() {
   return <div className="perf perf-h home-perf" aria-hidden="true" />
 }
 
-function Section({ id, className, children }: { id?: string; className?: string; children: ReactNode }) {
+// One part of the pass. Its tear line is its bottom edge, so the line travels with
+// the part when it folds; the last part, the stub, has none.
+function Section({ id, className, last, children }: { id?: string; className?: string; last?: boolean; children: ReactNode }) {
   return (
     <section id={id} className={['home-section', className].filter(Boolean).join(' ')}>
       {children}
+      {!last && <Perf />}
     </section>
   )
 }
@@ -96,32 +99,82 @@ const PREFLIGHT = [
   'Buffer rate headroom',
 ]
 
-// Unfolds each part of the pass as it scrolls into view: the tear line draws, then
-// the section folds down from it. Skipped for reduced motion or without
-// IntersectionObserver, so the page is always readable.
-function useUnfold() {
+// The page unfolds like a paper pass. Each part hangs from the crease at the
+// bottom of the part above: it starts tucked up behind that part and swings
+// down from its top edge as it scrolls up the screen, flat by OPEN_AT. The
+// angle follows scroll position, eased toward it each frame so it glides
+// rather than jumps; scrolling back folds it away again. Skipped for reduced
+// motion, so the page is always flat and readable.
+const FOLD_MAX = 118 // degrees: past 90, so a folded part sits behind the one above
+const START_AT = 1 // starts opening as its crease enters the bottom of the viewport
+const OPEN_AT = 0.32 // flat once its crease is this far down the viewport
+const EASE = 0.12 // share of the remaining distance covered each frame
+
+function useFold() {
   const ticket = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const root = ticket.current
-    if (!root || typeof IntersectionObserver !== 'function') return
+    if (!root) return
     if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const parts = Array.from(root.querySelectorAll<HTMLElement>(':scope > .home-section, :scope > .home-perf'))
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (!e.isIntersecting) continue
-          e.target.classList.add('is-in')
-          io.unobserve(e.target)
-        }
-      },
-      { rootMargin: '0px 0px -12% 0px', threshold: 0.08 },
-    )
+    const parts = Array.from(root.querySelectorAll<HTMLElement>(':scope > .home-section'))
+    const shown = parts.map(() => -1) // eased openness per part; -1 until first drawn
+    let frame = 0
+
+    // How open each part should be for the current scroll position, 0 to 1.
+    const targets = () => {
+      const vh = window.innerHeight
+      const atEnd = window.scrollY + vh >= document.documentElement.scrollHeight - 2
+      return parts.map((el) => {
+        if (atEnd) return 1
+        const top = el.getBoundingClientRect().top
+        const t = Math.min(1, Math.max(0, (vh * START_AT - top) / (vh * (START_AT - OPEN_AT))))
+        return 1 - (1 - t) ** 3 // ease out: quick off the crease, settling flat
+      })
+    }
+
+    const paint = (el: HTMLElement, open: number) => {
+      const deg = -FOLD_MAX * (1 - open)
+      el.style.setProperty('--fold', `${deg.toFixed(2)}deg`)
+      el.style.setProperty('--shade', `${(0.55 * Math.min(1, (1 - open) * 1.6)).toFixed(3)}`)
+      el.classList.toggle('is-in', open === 1)
+    }
+
+    const tick = () => {
+      frame = 0
+      const want = targets()
+      let moving = false
+      parts.forEach((el, i) => {
+        const cur = shown[i] < 0 ? want[i] : shown[i]
+        let next = cur + (want[i] - cur) * EASE
+        if (Math.abs(want[i] - next) < 0.002) next = want[i]
+        else moving = true
+        shown[i] = next
+        paint(el, next)
+      })
+      if (moving) frame = requestAnimationFrame(tick)
+    }
+    const queue = () => {
+      if (!frame) frame = requestAnimationFrame(tick)
+    }
+
     root.classList.add('home-fold')
-    for (const el of parts) io.observe(el)
+    parts.forEach((el, i) => {
+      el.style.zIndex = String(parts.length - i) // a folded part tucks behind the one above
+    })
+    tick()
+    window.addEventListener('scroll', queue, { passive: true })
+    window.addEventListener('resize', queue)
     return () => {
-      io.disconnect()
+      cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', queue)
+      window.removeEventListener('resize', queue)
       root.classList.remove('home-fold')
-      for (const el of parts) el.classList.remove('is-in')
+      for (const el of parts) {
+        el.style.removeProperty('--fold')
+        el.style.removeProperty('--shade')
+        el.style.removeProperty('z-index')
+        el.classList.remove('is-in')
+      }
     }
   }, [])
   return ticket
@@ -129,7 +182,7 @@ function useUnfold() {
 
 // Public root: what this is, how it works, and the way in.
 export default function Home() {
-  const ticket = useUnfold()
+  const ticket = useFold()
   return (
     <main className="home">
       <div className="home-wrap">
@@ -184,9 +237,9 @@ export default function Home() {
             </div>
             <p className="home-stack-note">Everyone gets a card like this, 1200 × 630, attached to their post.</p>
           </div>
+          <Perf />
         </header>
 
-        <Perf />
         <Section id="ways">
           <h2 className="home-h2">Three ways to start a launch</h2>
           <ol className="home-ways">
@@ -202,7 +255,6 @@ export default function Home() {
           <p className="home-quiet">However it starts, it ends the same way: one draft per person, and nothing posts without their tap.</p>
         </Section>
 
-        <Perf />
         <Section id="why">
           <h2 className="home-h2">Launch day usually looks like this</h2>
           <ol className="home-problems">
@@ -216,7 +268,6 @@ export default function Home() {
           </ol>
         </Section>
 
-        <Perf />
         <Section id="how">
           <h2 className="home-h2">How it works</h2>
           <ol className="home-steps">
@@ -254,7 +305,6 @@ export default function Home() {
           </ol>
         </Section>
 
-        <Perf />
         <Section>
           <h2 className="home-h2">Two screens, two people</h2>
           <div className="home-two">
@@ -299,7 +349,6 @@ export default function Home() {
           </div>
         </Section>
 
-        <Perf />
         <Section>
           <div className="home-voice-head">
             <h2 className="home-h2">Written in their voice</h2>
@@ -327,7 +376,6 @@ export default function Home() {
           </div>
         </Section>
 
-        <Perf />
         <Section id="captain">
           <h2 className="home-h2">For the captain</h2>
           <ul className="home-captain">
@@ -369,7 +417,6 @@ export default function Home() {
           </ul>
         </Section>
 
-        <Perf />
         <Section id="privacy" className="home-control">
           <div className="home-control-main">
             <h2 className="home-h2">You stay in control</h2>
@@ -403,8 +450,7 @@ export default function Home() {
           </div>
         </Section>
 
-        <Perf />
-        <Section className="home-final">
+        <Section className="home-final" last>
           <div className="home-final-copy">
             <h2 className="home-h2 home-final-title">Run your next launch as a crew.</h2>
             <p>Nothing posts until each person taps approve.</p>
