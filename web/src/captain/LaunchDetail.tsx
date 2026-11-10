@@ -252,7 +252,7 @@ export default function LaunchDetail() {
   useEffect(() => {
     if ((location.state as { failedUploads?: FailedUpload[] } | null)?.failedUploads) navigate(location.pathname, { replace: true, state: null })
   }, [location.pathname, location.state, navigate])
-  const { detail, error, reload, patch, editDraft, skipDraft, mutate } = useLaunch(id)
+  const { detail, error, reload, patch, editDraft, skipDraft, setFormat, mutate } = useLaunch(id)
   const [pending, setPending] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string>()
@@ -359,6 +359,7 @@ export default function LaunchDetail() {
             onHidden={(hiddenPrs) => save({ hiddenPrs })}
             onEditDraft={(draftId, text) => editDraft(draftId, text)}
             onSkipDraft={(draftId, skipped) => skipDraft(draftId, skipped)}
+            onFormat={(draftId, format) => setFormat(draftId, format)}
             onRefreshChannels={async () => {
               const r = await refreshChannels(id)
               await reload()

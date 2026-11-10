@@ -273,3 +273,33 @@ func TestForCrewDraftChecksEveryImage(t *testing.T) {
 		t.Errorf("fix = %q", cs[0].Fix)
 	}
 }
+
+// A story or a swipeable LinkedIn post with nothing to show is red, with a
+// fix that names the way out.
+func TestRulesStoriesAndDocumentsNeedAnImage(t *testing.T) {
+	for _, c := range []struct {
+		d   Draft
+		fix string
+	}{
+		{Draft{ChannelID: "fb", Service: "facebook", Network: "facebook", Text: "Shipped.", Format: "story"},
+			"A facebook story needs an image. Turn the card on, add an image, or post it normally."},
+		{Draft{ChannelID: "li", Service: "linkedin", Network: "linkedin", Text: "Shipped.", Format: "document"},
+			"A swipeable LinkedIn post needs an image. Turn the card on, add an image, or turn Swipeable off."},
+	} {
+		f := good()
+		f.l.CaptainDrafts = []Draft{c.d}
+		cs, _ := Run(context.Background(), f.deps, f.l)
+		for _, ch := range cs {
+			if ch.ID == 3 && (ch.OK || ch.Fix != c.fix) {
+				t.Errorf("%s: check 3 = %+v, want %q", c.d.Network, ch, c.fix)
+			}
+		}
+		f.l.CaptainDrafts[0].HasAsset = true
+		cs, _ = Run(context.Background(), f.deps, f.l)
+		for _, ch := range cs {
+			if ch.ID == 3 && !ch.OK {
+				t.Errorf("%s with an image: check 3 red: %s", c.d.Network, ch.Fix)
+			}
+		}
+	}
+}

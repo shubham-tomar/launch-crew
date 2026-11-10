@@ -34,6 +34,10 @@ type CaptainDraftView struct {
 	Note         string    `json:"note"` // why it became a Buffer draft or failed
 	// ExternalLink is the post's URL on the network once it was sent.
 	ExternalLink string `json:"externalLink"`
+	// Format is how the post goes out: "story", "document" or "" for a
+	// plain post. Formats lists the ones this channel may choose.
+	Format  string   `json:"format"`
+	Formats []string `json:"formats"`
 }
 
 // CrewPost is one post a crew member has in their Buffer for this launch.
@@ -200,6 +204,7 @@ func Detail(ctx context.Context, d Deps, id uuid.UUID) (DetailView, error) {
 			ID: cd.ID, ChannelID: cd.ChannelID, ChannelName: ch.Name, Service: ch.Service,
 			Text: cd.Text, Status: cd.Status, BufferPostID: cd.BufferPostID.String, Note: cd.Note,
 			ExternalLink: cd.ExternalLink,
+			Format:       postFormat(l, cd.ChannelID, ch.Service), Formats: formatsFor(ch.Service),
 		})
 	}
 	if l.Status == statusDraft {

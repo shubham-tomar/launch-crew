@@ -43,6 +43,9 @@ type Draft struct {
 	Thread                      []string
 	FirstComment                string
 	HasAsset                    bool
+	// Format is "story", "document" or "" for a plain post; a story or a
+	// document needs at least one image.
+	Format string
 }
 
 // Asset is a card or thumbnail URL; Label is the crew member's name or "release card".
@@ -218,6 +221,12 @@ func checkRules(ctx context.Context, deps Deps, conn uuid.UUID, drafts []Draft) 
 		}
 		if d.HasAsset && !r.ImageOK {
 			return fail(3, name, fmt.Sprintf("%s does not take images. Remove the image from that post.", d.Network))
+		}
+		if !d.HasAsset && d.Format == "story" {
+			return fail(3, name, fmt.Sprintf("A %s story needs an image. Turn the card on, add an image, or post it normally.", d.Network))
+		}
+		if !d.HasAsset && d.Format == "document" {
+			return fail(3, name, "A swipeable LinkedIn post needs an image. Turn the card on, add an image, or turn Swipeable off.")
 		}
 		if !d.HasAsset && strings.EqualFold(d.Network, "instagram") {
 			return fail(3, name, "Instagram post has no image. Turn the card on or add an image.")

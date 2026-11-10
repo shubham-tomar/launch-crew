@@ -1,3 +1,4 @@
+import type { Format } from '../components/PostFormat'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { editCaptainDraft, getLaunch, patchCaptainDraft, patchLaunch, type ApiError, type Detail, type Patch } from '../api'
 import { asError } from './format'
@@ -73,5 +74,13 @@ export function useLaunch(id: string) {
     [id],
   )
 
-  return { detail, error, reload, patch, editDraft, skipDraft, mutate }
+  const setFormat = useCallback(
+    async (draftId: string, format: Format) => {
+      const d = await patchCaptainDraft(id, draftId, { format })
+      if (current.current === id) setDetail(d)
+    },
+    [id],
+  )
+
+  return { detail, error, reload, patch, editDraft, skipDraft, setFormat, mutate }
 }

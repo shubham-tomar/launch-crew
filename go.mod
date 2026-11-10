@@ -10,6 +10,7 @@ require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.19.0
 	github.com/fogleman/gg v1.3.0
 	github.com/go-chi/chi/v5 v5.5.0
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/google/go-github/v93 v93.0.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.12.0

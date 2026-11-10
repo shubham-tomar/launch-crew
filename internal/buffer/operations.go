@@ -74,6 +74,40 @@ type CreatePostInput struct {
 	AssetURLs       []string
 	FirstComment    string
 	Thread          []string
+	// Story sends an Instagram or Facebook post as a story; elsewhere it is
+	// ignored. A story shows its images, not its text.
+	Story bool
+	// Document, when set, replaces AssetURLs with one PDF, which LinkedIn
+	// shows as a swipeable document.
+	Document *Document
+}
+
+// Document is a PDF attachment and the title the network shows with it.
+type Document struct {
+	URL, Title string
+}
+
+// Post formats a channel can choose beyond a plain post.
+const (
+	// FormatStory posts to an Instagram or Facebook story.
+	FormatStory = "story"
+	// FormatDocument posts the images to LinkedIn as one swipeable PDF.
+	FormatDocument = "document"
+)
+
+// FormatAllowed reports whether a channel on service can post as format;
+// the empty format, a plain post, is always allowed.
+func FormatAllowed(service, format string) bool {
+	switch format {
+	case "":
+		return true
+	case FormatStory:
+		s := strings.ToLower(service)
+		return s == "instagram" || s == "facebook"
+	case FormatDocument:
+		return strings.ToLower(service) == "linkedin"
+	}
+	return false
 }
 
 // CreatePostResult reports the created post. Notification is set when Buffer
@@ -484,7 +518,13 @@ func (c *Client) postInput(ctx context.Context, connID uuid.UUID, in CreatePostI
 		input["saveToDraft"] = true
 	}
 	var assets []map[string]any
+	if in.Document != nil {
+		assets = append(assets, map[string]any{"document": map[string]any{"url": in.Document.URL, "title": in.Document.Title}})
+	}
 	for _, u := range in.AssetURLs {
+		if in.Document != nil {
+			break
+		}
 		kind := "image"
 		if slices.Contains(videoExts, strings.ToLower(path.Ext(strings.SplitN(u, "?", 2)[0]))) {
 			kind = "video"
@@ -496,16 +536,36 @@ func (c *Client) postInput(ctx context.Context, connID uuid.UUID, in CreatePostI
 	if len(assets) > 0 && len(in.Thread) == 0 {
 		input["assets"] = assets
 	}
-	if in.FirstComment != "" || len(in.Thread) > 0 {
-		svc, err := c.channelService(ctx, connID, in.ChannelID)
-		if err != nil {
-			return nil, err
-		}
+	// The channel's service picks the metadata key. It comes from the cached
+	// channel list; when that cannot say, a post that needs no metadata goes
+	// out without it rather than failing here.
+	needs := in.FirstComment != "" || len(in.Thread) > 0
+	svc, err := c.channelService(ctx, connID, in.ChannelID)
+	if err != nil && needs {
+		return nil, err
+	}
+	// Buffer refuses an Instagram post without a type ("Instagram posts
+	// require a type (post, story, or reel)"). Ours are feed posts; several
+	// images in one make a carousel, as in Buffer's composer.
+	instagram := strings.ToLower(svc) == "instagram"
+	// A Facebook post goes out as Buffer's default unless it is a story.
+	fbStory := in.Story && strings.ToLower(svc) == "facebook"
+	if needs || instagram || fbStory {
 		key := svc
 		if k, ok := metadataKeys[svc]; ok {
 			key = k
 		}
 		md := map[string]any{}
+		switch {
+		case instagram && in.Story:
+			md["type"] = FormatStory
+			md["shouldShareToFeed"] = false
+		case instagram:
+			md["type"] = "post"
+			md["shouldShareToFeed"] = true
+		case fbStory:
+			md["type"] = FormatStory
+		}
 		if in.FirstComment != "" {
 			md["firstComment"] = in.FirstComment
 		}

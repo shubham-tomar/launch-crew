@@ -1,3 +1,4 @@
+import type { Format } from './components/PostFormat'
 export type View = {
   launch: {
     id: string
@@ -86,7 +87,7 @@ export type ApproveView = {
 }
 
 /** One channel to post to. `attach` asks for the launch's images; the server picks which files when it posts. */
-export type Selection = { channelId: string; text: string; timing: Timing; attach: boolean }
+export type Selection = { channelId: string; text: string; timing: Timing; attach: boolean; format?: Format }
 export type Outcome = { channelId: string; service: string; status: 'queued' | 'draft' | 'failed'; when: string | null; note: string; postId?: string }
 
 export const OFFLINE = 'Could not reach Launch Crew. Check your connection and try again.'
@@ -217,6 +218,9 @@ export type CaptainDraft = {
   note: string
   /** The post's URL on the network once it was sent. */
   externalLink?: string
+  /** How it goes out: 'story', 'document' or '' for a plain post; formats lists what this channel may choose. */
+  format?: Format
+  formats?: Format[]
 }
 /** One post a crew member has in their Buffer for this launch. */
 export type CrewPost = { network: string; status: string; externalLink: string }
@@ -363,7 +367,7 @@ export const createLaunch = (b: NewLaunch) => captain<Detail>('/launches', json(
 export const getLaunch = (id: string) => captain<Detail>(`/launches/${lid(id)}`)
 export const patchLaunch = (id: string, p: Patch) => captain<Detail>(`/launches/${lid(id)}`, json('PATCH', p))
 // text edits the post; skipped removes it from (true) or restores it to (false) the launch.
-export const patchCaptainDraft = (id: string, draftId: string, body: { text?: string; skipped?: boolean }) =>
+export const patchCaptainDraft = (id: string, draftId: string, body: { text?: string; skipped?: boolean; format?: Format }) =>
   captain<Detail>(`/launches/${lid(id)}/drafts/${encodeURIComponent(draftId)}`, json('PATCH', body))
 export const editCaptainDraft = (id: string, draftId: string, text: string) => patchCaptainDraft(id, draftId, { text })
 export const pressLaunch = (id: string) => captain<{ status: string }>(`/launches/${lid(id)}/launch`, json('POST'))

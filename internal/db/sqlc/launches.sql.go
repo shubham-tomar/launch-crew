@@ -28,7 +28,7 @@ INSERT INTO launches
     (owner_user_id, repo_id, source, title, summary, release_tag, release_url,
      headline_changes, roles, launch_at, window_minutes, crew_cap, card_preset, template_id)
 VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-RETURNING id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card
+RETURNING id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card, post_formats
 `
 
 type CreateLaunchParams struct {
@@ -92,6 +92,7 @@ func (q *Queries) CreateLaunch(ctx context.Context, arg CreateLaunchParams) (Lau
 		&i.CaptainNotified,
 		&i.TemplateID,
 		&i.IncludeCard,
+		&i.PostFormats,
 	)
 	return i, err
 }
@@ -139,7 +140,7 @@ func (q *Queries) GetLatestLaunchAssetByKind(ctx context.Context, arg GetLatestL
 }
 
 const getLaunch = `-- name: GetLaunch :one
-SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card FROM launches WHERE id = $1
+SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card, post_formats FROM launches WHERE id = $1
 `
 
 func (q *Queries) GetLaunch(ctx context.Context, id uuid.UUID) (Launch, error) {
@@ -171,6 +172,7 @@ func (q *Queries) GetLaunch(ctx context.Context, id uuid.UUID) (Launch, error) {
 		&i.CaptainNotified,
 		&i.TemplateID,
 		&i.IncludeCard,
+		&i.PostFormats,
 	)
 	return i, err
 }
@@ -196,7 +198,7 @@ func (q *Queries) GetLaunchAsset(ctx context.Context, id uuid.UUID) (LaunchAsset
 }
 
 const getLaunchByOpenTokenHash = `-- name: GetLaunchByOpenTokenHash :one
-SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card FROM launches WHERE open_token_hash = $1
+SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card, post_formats FROM launches WHERE open_token_hash = $1
 `
 
 func (q *Queries) GetLaunchByOpenTokenHash(ctx context.Context, openTokenHash []byte) (Launch, error) {
@@ -228,12 +230,13 @@ func (q *Queries) GetLaunchByOpenTokenHash(ctx context.Context, openTokenHash []
 		&i.CaptainNotified,
 		&i.TemplateID,
 		&i.IncludeCard,
+		&i.PostFormats,
 	)
 	return i, err
 }
 
 const getLaunchByRepoAndTag = `-- name: GetLaunchByRepoAndTag :one
-SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card FROM launches WHERE repo_id = $1 AND release_tag = $2 LIMIT 1
+SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card, post_formats FROM launches WHERE repo_id = $1 AND release_tag = $2 LIMIT 1
 `
 
 type GetLaunchByRepoAndTagParams struct {
@@ -270,6 +273,7 @@ func (q *Queries) GetLaunchByRepoAndTag(ctx context.Context, arg GetLaunchByRepo
 		&i.CaptainNotified,
 		&i.TemplateID,
 		&i.IncludeCard,
+		&i.PostFormats,
 	)
 	return i, err
 }
@@ -483,7 +487,7 @@ func (q *Queries) ListLaunchImages(ctx context.Context, launchID uuid.UUID) ([]L
 }
 
 const listLaunchesByOwner = `-- name: ListLaunchesByOwner :many
-SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card FROM launches
+SELECT id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card, post_formats FROM launches
 WHERE owner_user_id = $1 AND status <> 'deleted'
 ORDER BY created_at DESC
 `
@@ -523,6 +527,7 @@ func (q *Queries) ListLaunchesByOwner(ctx context.Context, ownerUserID uuid.Null
 			&i.CaptainNotified,
 			&i.TemplateID,
 			&i.IncludeCard,
+			&i.PostFormats,
 		); err != nil {
 			return nil, err
 		}
@@ -602,6 +607,25 @@ func (q *Queries) SetLaunchOpenToken(ctx context.Context, arg SetLaunchOpenToken
 	return err
 }
 
+const setLaunchPostFormat = `-- name: SetLaunchPostFormat :exec
+UPDATE launches SET post_formats = CASE
+    WHEN $1::text = '' THEN post_formats - $2::text
+    ELSE jsonb_set(post_formats, ARRAY[$2::text], to_jsonb($1::text))
+END
+WHERE id = $3
+`
+
+type SetLaunchPostFormatParams struct {
+	Format    string    `json:"format"`
+	ChannelID string    `json:"channel_id"`
+	ID        uuid.UUID `json:"id"`
+}
+
+func (q *Queries) SetLaunchPostFormat(ctx context.Context, arg SetLaunchPostFormatParams) error {
+	_, err := q.db.Exec(ctx, setLaunchPostFormat, arg.Format, arg.ChannelID, arg.ID)
+	return err
+}
+
 const updateCaptainDraftStatus = `-- name: UpdateCaptainDraftStatus :exec
 UPDATE captain_drafts SET status = $2, buffer_post_id = $3, note = $4 WHERE id = $1
 `
@@ -628,7 +652,7 @@ UPDATE launches
 SET title = $2, summary = $3, launch_at = $4, window_minutes = $5, crew_cap = $6,
     roles = $7, headline_changes = $8
 WHERE id = $1
-RETURNING id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card
+RETURNING id, owner_user_id, repo_id, source, status, title, summary, release_tag, release_url, headline_changes, roles, launch_at, window_minutes, open_token_hash, crew_cap, card_preset, hero_asset_id, created_at, open_count, open_token_enc, release_id, qr_logo, captain_notified, template_id, include_card, post_formats
 `
 
 type UpdateLaunchParams struct {
@@ -680,6 +704,7 @@ func (q *Queries) UpdateLaunch(ctx context.Context, arg UpdateLaunchParams) (Lau
 		&i.CaptainNotified,
 		&i.TemplateID,
 		&i.IncludeCard,
+		&i.PostFormats,
 	)
 	return i, err
 }

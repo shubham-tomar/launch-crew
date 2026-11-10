@@ -62,6 +62,8 @@ type Deps struct {
 	Cards  trigger.CardStore
 	// Images stores captain uploads; Cards when nil and it can.
 	Images ImageStore
+	// Docs builds the PDF a LinkedIn post sends as a swipeable document.
+	Docs crew.DocumentStore
 	// Render draws cards; cards.Render when nil.
 	Render    func(c any, p cards.Preset) ([]byte, error)
 	Preflight preflight.Deps

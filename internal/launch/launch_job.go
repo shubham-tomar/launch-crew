@@ -181,6 +181,12 @@ func postCaptainDraft(ctx context.Context, d Deps, s *state, cd sqlc.CaptainDraf
 			}
 		}
 		in.AssetURLs = crew.Attachments(card, s.l.IncludeCard, s.images, rules.MaxImages, rules.MaxImageBytes)
+		format := postFormat(s.l, cd.ChannelID, ch.Service)
+		pages := crew.DocumentPages(card, s.l.IncludeCard, s.images)
+		if err := crew.ApplyFormat(ctx, d.Docs, &in, ch.Service, format, s.l.Title, pages); err != nil {
+			log.Printf("launch %s: document for %s: %v", s.l.ID, cd.ChannelID, err)
+			return setCaptainDraft(context.WithoutCancel(ctx), d, cd.ID, captainFailed, "", "The LinkedIn document could not be made. Retry, or turn Swipeable off.")
+		}
 	}
 	timeout := d.PostTimeout
 	if timeout <= 0 {

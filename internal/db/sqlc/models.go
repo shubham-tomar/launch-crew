@@ -177,6 +177,7 @@ type Launch struct {
 	CaptainNotified []string           `json:"captain_notified"`
 	TemplateID      uuid.NullUUID      `json:"template_id"`
 	IncludeCard     bool               `json:"include_card"`
+	PostFormats     []byte             `json:"post_formats"`
 }
 
 type LaunchAsset struct {

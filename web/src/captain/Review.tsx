@@ -6,6 +6,7 @@ import IconButton from '../components/IconButton'
 import ServiceIcon from '../components/ServiceIcon'
 import { serviceName } from '../crew/format'
 import { bufferChannelUrl, type CaptainDraft, type Detail, type Pr } from '../api'
+import PostFormat, { type Format } from '../components/PostFormat'
 import { asError, limitOf } from './format'
 
 type Props = {
@@ -14,6 +15,7 @@ type Props = {
   onHidden: (hidden: number[]) => void
   onEditDraft: (draftId: string, text: string) => Promise<void>
   onSkipDraft: (draftId: string, skipped: boolean) => Promise<void>
+  onFormat: (draftId: string, format: Format) => Promise<void>
   // Re-reads the captain's Buffer channels and reloads the launch; resolves to the channel count.
   onRefreshChannels: () => Promise<number>
 }
@@ -46,11 +48,13 @@ function Post({
   canEdit,
   onEdit,
   onSkip,
+  onFormat,
 }: {
   d: CaptainDraft
   canEdit: boolean
   onEdit: (id: string, text: string) => Promise<void>
   onSkip: (id: string, skipped: boolean) => Promise<void>
+  onFormat: (id: string, format: Format) => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(d.text)
@@ -72,6 +76,18 @@ function Post({
       setProblem(asError(e).message)
     }
     setSaving(false)
+  }
+
+  const [formatting, setFormatting] = useState(false)
+  async function pickFormat(format: Format) {
+    setFormatting(true)
+    setProblem(undefined)
+    try {
+      await onFormat(d.id, format)
+    } catch (e) {
+      setProblem(asError(e).message)
+    }
+    setFormatting(false)
   }
 
   async function skip(skipped: boolean) {
@@ -108,6 +124,11 @@ function Post({
         </span>
       </div>
       {d.note && <p className="cap-muted cap-post-note">{d.note}</p>}
+      {(d.formats?.length ?? 0) > 0 && (canEdit && unsent ? (
+        <PostFormat channel={d.channelName} formats={d.formats ?? []} value={d.format ?? ''} disabled={formatting} onChange={pickFormat} />
+      ) : d.format ? (
+        <p className="cap-muted cap-post-note">{d.format === 'story' ? 'Posted as a story.' : 'Sent as a swipeable PDF.'}</p>
+      ) : null)}
       {editing ? (
         <div className="cap-edit">
           <label className="cap-field">
@@ -192,7 +213,7 @@ function PrRow({ pr, editable, pending, toggle }: { pr: Pr; editable: boolean; p
 }
 
 // Left column: headline changes, the captain's own posts, hidden chores.
-export default function Review({ detail, pending, onHidden, onEditDraft, onSkipDraft, onRefreshChannels }: Props) {
+export default function Review({ detail, pending, onHidden, onEditDraft, onSkipDraft, onFormat, onRefreshChannels }: Props) {
   const editable = detail.status === 'draft'
   const [checking, setChecking] = useState(false)
   const [checked, setChecked] = useState('')
@@ -263,7 +284,7 @@ export default function Review({ detail, pending, onHidden, onEditDraft, onSkipD
         ) : (
           <ul className="cap-list">
             {posts.map((d) => (
-              <Post key={d.id} d={d} canEdit={editable} onEdit={onEditDraft} onSkip={onSkipDraft} />
+              <Post key={d.id} d={d} canEdit={editable} onEdit={onEditDraft} onSkip={onSkipDraft} onFormat={onFormat} />
             ))}
           </ul>
         )}

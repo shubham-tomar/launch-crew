@@ -695,3 +695,17 @@ test('a refused remove reloads the launch rather than guessing what is left', as
   await waitFor(() => expect(loads()).toBe(before + 1))
   expect(screen.getByRole('img', { name: 'Image 1' })).toHaveAttribute('src', 'u1')
 })
+
+test('a LinkedIn post can be made swipeable; other channels offer no format', async () => {
+  const calls = mockApi({
+    detail: detail({
+      captainDrafts: [cd(), cd({ id: 'cd2', channelName: 'Shubham Tomar', service: 'linkedin', formats: ['document'], format: '' })],
+    }),
+  })
+  const user = userEvent.setup()
+  visit('/captain/launches/l1')
+  const sw = await screen.findByRole('switch', { name: 'Shubham Tomar: swipeable (sent as a pdf)' })
+  expect(screen.queryByRole('group', { name: /post type/ })).toBeNull()
+  await user.click(sw)
+  await waitFor(() => expect(calls.find((c) => c.method === 'PATCH' && c.url.endsWith('/drafts/cd2'))?.body).toEqual({ format: 'document' }))
+})

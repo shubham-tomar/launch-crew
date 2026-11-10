@@ -41,6 +41,8 @@ type Deps struct {
 
 	Drafting *drafting.Service
 	Cards    *cards.Uploader
+	// Docs builds the PDF a LinkedIn post sends as a swipeable document.
+	Docs DocumentStore
 	// Enqueue adds a job; jobs.Enqueue bound to Q in production.
 	Enqueue func(ctx context.Context, kind jobs.Kind, payload any, runAt time.Time, launchID *uuid.UUID) (int64, error)
 	BaseURL string // public origin, for open links
@@ -62,6 +64,10 @@ type Selection struct {
 	Attach bool `json:"attach"`
 	// Card is the member's card slot, filled in by Post; a caller cannot set it.
 	Card Image `json:"-"`
+	// Format is "story" (Instagram, Facebook), "document" (LinkedIn, the
+	// images as one swipeable PDF) or "" for a plain post. One the channel
+	// cannot take is sent as a plain post.
+	Format string `json:"format"`
 }
 
 // Outcome is what happened on one channel.
@@ -400,7 +406,7 @@ func (p *poster) attempt(ctx context.Context, j *job) Outcome {
 	}
 	// Resolved now, not when the person approved: an image the captain
 	// removed since is not sent, one they added since is.
-	assets, err := p.attachments(ctx, j)
+	assets, pages, err := p.attachments(ctx, j)
 	if err != nil {
 		log.Printf("crew: images for %s: %v", p.launch.ID, err)
 		return j.fail(noteOurs)
@@ -408,7 +414,7 @@ func (p *poster) attempt(ctx context.Context, j *job) Outcome {
 	checks, ok := preflight.ForCrewDraft(ctx, p.deps.Preflight, preflight.CrewDraft{
 		Draft: preflight.Draft{
 			ChannelID: ch.ID, Service: ch.Service, Network: j.network, Name: ch.Name,
-			Text: j.text, Thread: j.thread, FirstComment: j.firstComment, HasAsset: len(assets) > 0,
+			Text: j.text, Thread: j.thread, FirstComment: j.firstComment, HasAsset: len(assets) > 0, Format: j.format(),
 		},
 		ConnectionID: p.connID, AssetURLs: assets, LaunchAt: p.launch.LaunchAt.Time,
 	}, recent)
@@ -431,6 +437,10 @@ func (p *poster) attempt(ctx context.Context, j *job) Outcome {
 		in.SaveToDraft = true
 	}
 	in.AssetURLs = assets
+	if err := ApplyFormat(ctx, p.deps.Docs, &in, j.channel.Service, j.format(), p.launch.Title, pages); err != nil {
+		log.Printf("crew: document for %s: %v", p.launch.ID, err)
+		return j.fail(noteOurs)
+	}
 
 	// Record what is about to be sent, so a later tap can look for it.
 	j.sentText = pgtype.Text{String: j.text, Valid: true}
@@ -472,15 +482,26 @@ func (p *poster) attempt(ctx context.Context, j *job) Outcome {
 // launch includes the card slot) and the launch's current images, cut to
 // the network's limit. sel.AssetURL carries the intent: Post sets it to the
 // card, or to an image when the member has no card.
-func (p *poster) attachments(ctx context.Context, j *job) ([]string, error) {
+// pages are the same files for a LinkedIn document, uncut.
+func (p *poster) attachments(ctx context.Context, j *job) (assets, pages []string, err error) {
 	if !j.sel.Attach || !j.rules.ImageOK {
-		return nil, nil
+		return nil, nil, nil
 	}
 	rows, err := p.deps.Q.ListLaunchImages(ctx, p.launch.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return Attachments(j.sel.Card, p.launch.IncludeCard, ImagesOf(rows), j.rules.MaxImages, j.rules.MaxImageBytes), nil
+	imgs := ImagesOf(rows)
+	return Attachments(j.sel.Card, p.launch.IncludeCard, imgs, j.rules.MaxImages, j.rules.MaxImageBytes),
+		DocumentPages(j.sel.Card, p.launch.IncludeCard, imgs), nil
+}
+
+// format is the selection's post format when the channel can take it, else "".
+func (j *job) format() string {
+	if buffer.FormatAllowed(j.channel.Service, j.sel.Format) {
+		return j.sel.Format
+	}
+	return ""
 }
 
 // fit sets the text, thread and first comment to send and reports whether
