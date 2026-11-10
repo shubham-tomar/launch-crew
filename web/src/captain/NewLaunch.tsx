@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { createLaunch, listTemplates, patchLaunch, previewQr, uploadLaunchImage, type NewLaunch as Body, type QrLogo, type Role, type Template } from '../api'
 import LaunchImages from './LaunchImages'
+import Loader from '../components/Loader'
 import type { FailedUpload } from './LaunchDetail'
 import Alert from '../components/Alert'
 import Button from '../components/Button'
@@ -249,6 +250,7 @@ export default function NewLaunch() {
       if (refused && forQr) setQrError(ex.message)
       else if (refused) setHeroError(ex.message)
       else setError(ex.message)
+      setUploadNote('')
       setBusy(false)
     }
   }
@@ -273,17 +275,22 @@ export default function NewLaunch() {
         <legend>Where does this come from?</legend>
         <div className="nl-pills">
           {SOURCES.map((s) => (
-            <button key={s.id} type="button" className="nl-pill" aria-pressed={source === s.id} onClick={() => pick(s.id)}>
+            <button key={s.id} type="button" className="nl-pill" aria-pressed={source === s.id} disabled={busy} onClick={() => pick(s.id)}>
               {source === s.id && check}
               {s.label}
             </button>
           ))}
         </div>
       </fieldset>
-      {source === 'github' ? (
-        <GithubExplainer />
-      ) : (
-        <div className="nl-grid">
+      {source === 'github' && <GithubExplainer />}
+      {source !== 'github' && busy && (
+        <div className="nl-busy panel">
+          <Loader label={uploadNote || 'Creating your launch'} hint="Drawing your cards. This can take a few seconds." />
+        </div>
+      )}
+      {source !== 'github' && (
+        // Hidden, not removed, while it saves: a refusal brings the form back as it was.
+        <div className="nl-grid" hidden={busy}>
           <form className="nl-form" onSubmit={submit} noValidate>
             <div className="nl-intro">
               <h2>Set the moment</h2>
@@ -416,7 +423,6 @@ export default function NewLaunch() {
                 onMove={moveQueued}
                 onIncludeCard={setIncludeCard}
               />
-              {uploadNote && <p role="status" className="nl-hint">{uploadNote}</p>}
             </fieldset>
             <fieldset className="nl-fieldset">
               <legend>QR centre mark</legend>
