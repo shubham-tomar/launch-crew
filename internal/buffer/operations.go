@@ -82,9 +82,11 @@ type CreatePostInput struct {
 	Document *Document
 }
 
-// Document is a PDF attachment and the title the network shows with it.
+// Document is a PDF attachment, the title the network shows with it, and
+// the image shown before it opens. Buffer refuses a document missing any of
+// the three.
 type Document struct {
-	URL, Title string
+	URL, Title, ThumbnailURL string
 }
 
 // Post formats a channel can choose beyond a plain post.
@@ -519,7 +521,7 @@ func (c *Client) postInput(ctx context.Context, connID uuid.UUID, in CreatePostI
 	}
 	var assets []map[string]any
 	if in.Document != nil {
-		assets = append(assets, map[string]any{"document": map[string]any{"url": in.Document.URL, "title": in.Document.Title}})
+		assets = append(assets, map[string]any{"document": map[string]any{"url": in.Document.URL, "title": in.Document.Title, "thumbnailUrl": in.Document.ThumbnailURL}})
 	}
 	for _, u := range in.AssetURLs {
 		if in.Document != nil {

@@ -72,7 +72,7 @@ func TestLaunchJobLinkedInDocument(t *testing.T) {
 				t.Fatalf("LinkedIn assets = %v, want one document", assets)
 			}
 			d, _ := assets[0].(map[string]any)["document"].(map[string]any)
-			if d["url"] != "https://cdn.example/docs/launch.pdf" || d["title"] != e.launch.Title {
+			if d["url"] != "https://cdn.example/docs/launch.pdf" || d["title"] != e.launch.Title || d["thumbnailUrl"] == "" {
 				t.Fatalf("LinkedIn document = %v", assets[0])
 			}
 		case "ch-x":

@@ -47,7 +47,7 @@ func TestApplyFormat(t *testing.T) {
 	if err := crew.ApplyFormat(ctx, docs, &in, "linkedin", "document", "Rocket 1.2", []string{"p1", "p2"}); err != nil {
 		t.Fatal(err)
 	}
-	if in.Document == nil || in.Document.Title != "Rocket 1.2" || in.AssetURLs != nil || !reflect.DeepEqual(docs.got, []string{"p1", "p2"}) {
+	if in.Document == nil || in.Document.Title != "Rocket 1.2" || in.Document.ThumbnailURL != "p1" || in.AssetURLs != nil || !reflect.DeepEqual(docs.got, []string{"p1", "p2"}) {
 		t.Fatalf("document = %+v (pages %v)", in, docs.got)
 	}
 
