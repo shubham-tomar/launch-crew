@@ -934,7 +934,7 @@ func TestStoriesAndDocuments(t *testing.T) {
 		t.Fatalf("plain facebook post carries metadata: %v", input)
 	}
 
-	doc := &buffer.Document{URL: "https://cards.example/docs/x.pdf", Title: "Rocket 1.2"}
+	doc := &buffer.Document{URL: "https://cards.example/docs/x.pdf", Title: "Rocket 1.2", ThumbnailURL: "https://cards.example/p1.png"}
 	if _, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{ChannelID: "li", Text: "hi", Mode: "addToQueue", AssetURLs: imgs, Document: doc}); err != nil {
 		t.Fatal(err)
 	}
@@ -943,7 +943,8 @@ func TestStoriesAndDocuments(t *testing.T) {
 		t.Fatalf("assets = %v, want just the document", assets)
 	}
 	d, _ := assets[0].(map[string]any)["document"].(map[string]any)
-	if d["url"] != doc.URL || d["title"] != doc.Title {
+	// Buffer refuses a document without thumbnailUrl.
+	if d["url"] != doc.URL || d["title"] != doc.Title || d["thumbnailUrl"] != doc.ThumbnailURL {
 		t.Fatalf("document asset = %v", assets[0])
 	}
 

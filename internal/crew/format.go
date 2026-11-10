@@ -42,7 +42,7 @@ func DocumentPages(card Image, includeCard bool, images []Image) []string {
 
 // ApplyFormat turns in into the chosen format. A story keeps only its images
 // (a story shows no text, thread or comment, so those are dropped). A
-// document replaces the images with one PDF of pages, titled title. A plain
+// document replaces the images with one PDF of pages, titled title, with the first page as its thumbnail. A plain
 // post, or a format the channel cannot take, leaves in as it is.
 func ApplyFormat(ctx context.Context, docs DocumentStore, in *buffer.CreatePostInput, service, format, title string, pages []string) error {
 	if !buffer.FormatAllowed(service, format) {
@@ -63,7 +63,8 @@ func ApplyFormat(ctx context.Context, docs DocumentStore, in *buffer.CreatePostI
 		if err != nil {
 			return fmt.Errorf("%w: %v", ErrNoDocument, err)
 		}
-		in.Document = &buffer.Document{URL: url, Title: title}
+		// The first page doubles as the thumbnail Buffer requires.
+		in.Document = &buffer.Document{URL: url, Title: title, ThumbnailURL: pages[0]}
 		in.AssetURLs = nil
 	}
 	return nil
