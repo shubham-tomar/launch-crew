@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/shubham-tomar/launchcrew/internal/buffer"
 	"github.com/shubham-tomar/launchcrew/internal/db/sqlc"
 	"github.com/shubham-tomar/launchcrew/internal/drafting"
 )
@@ -19,6 +20,10 @@ import (
 type DraftPatch struct {
 	Text    *string `json:"text"`
 	Skipped *bool   `json:"skipped"`
+	// Format is the channel's post format: "story" (Instagram, Facebook),
+	// "document" (LinkedIn) or "" for a plain post. It is kept on the
+	// launch by channel, so it outlives the draft being rebuilt.
+	Format *string `json:"format"`
 }
 
 // PatchCaptainDraft edits one of the captain's own posts. Only a draft launch
@@ -26,7 +31,7 @@ type DraftPatch struct {
 // non-empty and fit the channel's character limit; a removed post cannot have
 // its text edited unless the same patch puts it back.
 func PatchCaptainDraft(ctx context.Context, d Deps, launchID, draftID uuid.UUID, p DraftPatch) error {
-	if p.Text == nil && p.Skipped == nil {
+	if p.Text == nil && p.Skipped == nil && p.Format == nil {
 		return invalid("nothing to change")
 	}
 	var text string
@@ -76,6 +81,19 @@ func PatchCaptainDraft(ctx context.Context, d Deps, launchID, draftID uuid.UUID,
 		}
 	}
 
+	if p.Format != nil {
+		s.withBuffer(ctx, d)
+		ch, ok := s.channels[cd.ChannelID]
+		if !ok || !buffer.FormatAllowed(ch.Service, *p.Format) {
+			return invalid("that channel cannot post as %q", *p.Format)
+		}
+		if err := d.Q.SetLaunchPostFormat(ctx, sqlc.SetLaunchPostFormatParams{ID: launchID, ChannelID: cd.ChannelID, Format: *p.Format}); err != nil {
+			return fmt.Errorf("launch: set post format: %w", err)
+		}
+		if p.Text == nil && p.Skipped == nil {
+			return nil
+		}
+	}
 	var newText *string
 	if p.Text != nil {
 		newText = &text

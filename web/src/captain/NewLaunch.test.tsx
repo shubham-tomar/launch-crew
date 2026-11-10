@@ -202,3 +202,33 @@ test('a failed upload after create still opens the launch and names the file', a
   expect(screen.getByText('Use a JPEG, PNG, GIF or WebP image.')).toBeInTheDocument()
   expect(screen.getByRole('img', { name: 'Image 1' })).toHaveAttribute('src', 'https://cdn.example/uploads/1.jpg')
 })
+
+test('while the launch is being created, the plane loader stands in for the form', async () => {
+  let finish: (r: Response) => void = () => {}
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith('/templates')) return Promise.resolve(new Response(JSON.stringify({ templates: [] }), { status: 200 }))
+      if (url.endsWith('/qr-preview')) return Promise.resolve(new Response(JSON.stringify({ png: 'data:image/png;base64,QR' }), { status: 200 }))
+      if (init?.method === 'POST' && url.endsWith('/launches')) return new Promise<Response>((res) => (finish = res))
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    }),
+  )
+  render(
+    <MemoryRouter>
+      <NewLaunch />
+    </MemoryRouter>,
+  )
+  await userEvent.type(screen.getByLabelText('Title'), 'Go night')
+  await userEvent.click(screen.getByRole('button', { name: 'Create launch' }))
+  expect(await screen.findByText('Creating your launch')).toBeInTheDocument()
+  expect(screen.getByLabelText('Title')).not.toBeVisible()
+  expect(screen.getByRole('button', { name: 'Manual post' })).toBeDisabled()
+
+  // A refusal brings the form back as it was, with the message.
+  finish(new Response(JSON.stringify({ error: 'bad_request', message: 'Nope.' }), { status: 400 }))
+  expect(await screen.findByText('Nope.')).toBeInTheDocument()
+  expect(screen.getByLabelText('Title')).toBeVisible()
+  expect(screen.getByLabelText('Title')).toHaveValue('Go night')
+  expect(screen.queryByText('Creating your launch')).toBeNull()
+})

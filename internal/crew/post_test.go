@@ -1125,3 +1125,51 @@ func TestPostCarriesTheCardWithItsSmallCopy(t *testing.T) {
 		t.Errorf("Bluesky assets = %v, want the small copy of the card", got)
 	}
 }
+
+// A member posts an Instagram story and a swipeable LinkedIn post; a story
+// asked for on X is sent as a plain post.
+func TestCrewPostFormats(t *testing.T) {
+	e := setup(t, channel{"ig", "instagram", "ana"}, channel{"li", "linkedin", "Ana"}, channel{"x1", "twitter", "@ana"})
+	ctx := context.Background()
+	docs := &docStore{}
+	e.deps.Docs = docs
+	const card = "https://r2.example/cards/ana.png"
+	e.giveCard(t, card)
+	e.addImage(t, "https://r2.example/uploads/0.jpg")
+	e.fake.Script("CreatePost", success("p-1"), success("p-2"), success("p-3"))
+	out, err := crew.Post(ctx, e.deps, e.memberID, []crew.Selection{
+		{ChannelID: "ig", Text: "ig post", Timing: crew.TimingQueue, Attach: true, Format: "story"},
+		{ChannelID: "li", Text: "li post", Timing: crew.TimingQueue, Attach: true, Format: "document"},
+		{ChannelID: "x1", Text: "x post", Timing: crew.TimingQueue, Attach: true, Format: "story"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range out {
+		if o.Status != "queued" {
+			t.Fatalf("post: %+v", out)
+		}
+	}
+	byText := map[string]map[string]any{}
+	for _, in := range createInputs(e.fake) {
+		byText[in["text"].(string)] = in
+	}
+	md := func(in map[string]any, key string) map[string]any {
+		m, _ := in["metadata"].(map[string]any)
+		v, _ := m[key].(map[string]any)
+		return v
+	}
+	if ig := md(byText["ig post"], "instagram"); ig["type"] != "story" {
+		t.Errorf("instagram metadata = %v, want a story", ig)
+	}
+	if want := []string{card, "https://r2.example/uploads/0.jpg"}; !reflect.DeepEqual(docs.got, want) {
+		t.Errorf("document pages = %v, want %v", docs.got, want)
+	}
+	assets, _ := byText["li post"]["assets"].([]any)
+	if len(assets) != 1 || assets[0].(map[string]any)["document"] == nil {
+		t.Errorf("LinkedIn assets = %v, want one document", assets)
+	}
+	if x := byText["x post"]; x["metadata"] != nil || len(assetURLs(x)) != 2 {
+		t.Errorf("X input = %v, want a plain post with both images", x)
+	}
+}

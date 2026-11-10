@@ -416,3 +416,11 @@
   object-fit: cover;
   border-radius: var(--rounded-sm);
 }
+
+.nl-grid[hidden] {
+  display: none;
+}
+
+.nl-busy {
+  padding-block: var(--space-xl);
+}

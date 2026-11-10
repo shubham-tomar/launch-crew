@@ -352,6 +352,7 @@ func runPreflight(ctx context.Context, d Deps, s *state, drafts []sqlc.CaptainDr
 			ChannelID: cd.ChannelID, Service: ch.Service, Network: string(n), Name: ch.Name,
 			Text: cd.Text, Thread: threadOf(cd.Thread), FirstComment: cd.FirstComment.String,
 			HasAsset: len(crew.Attachments(card, s.l.IncludeCard, s.images, rules.MaxImages, rules.MaxImageBytes)) > 0,
+			Format:   postFormat(s.l, cd.ChannelID, ch.Service),
 		})
 	}
 	return preflight.Run(ctx, d.preflightDeps(), pl)

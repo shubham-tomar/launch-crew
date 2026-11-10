@@ -91,3 +91,10 @@ SELECT count(*) FROM launch_assets WHERE launch_id = $1 AND kind = 'image';
 
 -- name: SetLaunchIncludeCard :exec
 UPDATE launches SET include_card = $2 WHERE id = $1;
+
+-- name: SetLaunchPostFormat :exec
+UPDATE launches SET post_formats = CASE
+    WHEN sqlc.arg(format)::text = '' THEN post_formats - sqlc.arg(channel_id)::text
+    ELSE jsonb_set(post_formats, ARRAY[sqlc.arg(channel_id)::text], to_jsonb(sqlc.arg(format)::text))
+END
+WHERE id = sqlc.arg(id);

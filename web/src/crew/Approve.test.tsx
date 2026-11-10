@@ -531,3 +531,22 @@ test('Bluesky skips images over 1 MB that have no small copy, and the note says 
   await waitFor(() => expect(posts(m)).toHaveLength(1))
   expect(JSON.parse(posts(m)[0].body!).selections[0]).toMatchObject({ attach: true })
 })
+
+test('an Instagram story is chosen per channel and sent with the post', async () => {
+  const IG = ch('c3', 'Ada on Instagram', 'instagram')
+  const m = mockApi({
+    connect: approveView({ channels: [IG], drafts: [dr('d3', 'c3', 'insta one', { network: 'instagram' })] }),
+    post: () => Promise.resolve(new Response(JSON.stringify({ outcomes: [
+      { channelId: 'c3', service: 'instagram', status: 'queued', when: null, note: '' },
+    ] }), { status: 200 })),
+    invite: { ...invite, card: { url: 'https://r2/ada.png', alt: 'Ada card' }, includeCard: true } as unknown as View,
+  })
+  visit()
+  await userEvent.click(await screen.findByRole('button', { name: 'Story' }))
+  expect(screen.getByText(/not your text or link/)).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Add to my queue' }))
+  await waitFor(() => expect(posts(m)).toHaveLength(1))
+  expect(JSON.parse(posts(m)[0].body!).selections).toEqual([
+    { channelId: 'c3', text: 'insta one', timing: 'window', attach: true, format: 'story' },
+  ])
+})

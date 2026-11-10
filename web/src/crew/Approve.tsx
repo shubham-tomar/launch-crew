@@ -9,6 +9,7 @@ import DraftBox from '../components/DraftBox'
 import IconButton from '../components/IconButton'
 import Loader from '../components/Loader'
 import Pass from '../components/Pass'
+import PostFormat, { formatsFor, type Format } from '../components/PostFormat'
 import SafeImg from '../components/SafeImg'
 import ServiceIcon from '../components/ServiceIcon'
 import VoiceCard, { type VoiceEdit } from '../components/VoiceCard'
@@ -155,6 +156,8 @@ export default function Approve() {
   const [fail, setFail] = useState<ApiError>()
   const [retry, setRetry] = useState(0)
   const [checked, setChecked] = useState<Record<string, boolean>>({})
+  // Each channel's post format; a channel not listed posts normally.
+  const [formats, setFormats] = useState<Record<string, Format>>({})
   const [timing, setTiming] = useState<Timing>('queue')
   const [active, setActive] = useState('')
   const [locked, setLocked] = useState<Set<string>>(new Set())
@@ -258,6 +261,8 @@ export default function Approve() {
   const channels = data?.channels ?? []
   const drafts = (fresh ?? data?.drafts ?? []).filter((d) => channels.some((c) => c.id === d.channelId && c.eligible))
   const shown = drafts.filter((d) => checked[d.channelId])
+  // A story or a swipeable post needs something to show: the card, or the captain's images.
+  const attachable = Boolean((invite?.includeCard && invite?.card) || (invite?.images?.length ?? 0) > 0)
   const current = shown.find((d) => d.channelId === active) ?? shown[0]
   // The network's name sits beside the account name, unless the account is already called that.
   const metaOf = (c?: { name: string; service: string }) => {
@@ -287,6 +292,7 @@ export default function Approve() {
     try {
       const r = await post(memberId, token, picks.map((d) => ({
         channelId: d.channelId, text: texts.current[d.id] ?? d.text, timing, attach: true,
+        ...(formats[d.channelId] ? { format: formats[d.channelId] } : {}),
       })))
       const all = { ...outcomes, ...Object.fromEntries(r.outcomes.map((o) => [o.channelId, o])) }
       setOutcomes(all)
@@ -428,6 +434,15 @@ export default function Approve() {
                   }}
                   onSave={(t) => save(d.id, t)}
                 />
+                {attachable && (
+                  <PostFormat
+                    channel={channels.find((c) => c.id === d.channelId)?.name ?? ''}
+                    formats={formatsFor(channels.find((c) => c.id === d.channelId)?.service ?? '')}
+                    value={formats[d.channelId] ?? ''}
+                    disabled={locked.has(d.id) || posting}
+                    onChange={(f) => setFormats((s) => ({ ...s, [d.channelId]: f }))}
+                  />
+                )}
               </div>
             ))}
           </>

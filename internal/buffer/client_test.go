@@ -433,9 +433,15 @@ func TestLimitReachedRetriesAsDraft(t *testing.T) {
 	if res.PostID != "p1" || !res.SavedAsDraft || res.Note != "your queue is full, saved as a draft instead" {
 		t.Fatalf("result = %+v", res)
 	}
-	reqs := e.fake.Requests()
+	// Only the posts count; the channel lookup before them is not under test.
+	var reqs []bufferfake.Request
+	for _, r := range e.fake.Requests() {
+		if r.Op == "CreatePost" {
+			reqs = append(reqs, r)
+		}
+	}
 	if len(reqs) != 2 {
-		t.Fatalf("requests = %d, want 2", len(reqs))
+		t.Fatalf("CreatePost requests = %d, want 2", len(reqs))
 	}
 	first := reqs[0].Vars["input"].(map[string]any)
 	second := reqs[1].Vars["input"].(map[string]any)
@@ -804,9 +810,15 @@ func TestReminderRefusalRetriesAsNotification(t *testing.T) {
 	if res.PostID != "p2" || !res.Notification || res.Note != buffer.NotifyNote {
 		t.Fatalf("result = %+v", res)
 	}
-	reqs := e.fake.Requests()
+	// Only the posts count; the channel lookup before them is not under test.
+	var reqs []bufferfake.Request
+	for _, r := range e.fake.Requests() {
+		if r.Op == "CreatePost" {
+			reqs = append(reqs, r)
+		}
+	}
 	if len(reqs) != 2 {
-		t.Fatalf("requests = %d, want 2", len(reqs))
+		t.Fatalf("CreatePost requests = %d, want 2", len(reqs))
 	}
 	first := reqs[0].Vars["input"].(map[string]any)
 	second := reqs[1].Vars["input"].(map[string]any)
@@ -822,5 +834,129 @@ func TestReminderRefusalRetriesAsNotification(t *testing.T) {
 	var me *buffer.MutationError
 	if !errors.As(err, &me) || e.fake.Count("CreatePost") != 3 {
 		t.Fatalf("err = %v, CreatePost calls = %d", err, e.fake.Count("CreatePost"))
+	}
+}
+
+// Buffer refuses an Instagram post without a type ("Instagram posts require a
+// type (post, story, or reel)"), so every Instagram post says it is a feed
+// post, several images included (Buffer's composer makes that a carousel).
+func TestInstagramPostsSayTheirType(t *testing.T) {
+	e := setup(t, time.Hour)
+	ctx := context.Background()
+	e.fake.Handle("GetChannels", map[string]any{"channels": []map[string]any{
+		{"id": "ig", "name": "rocket", "service": "instagram", "type": "business"},
+		{"id": "ch1", "name": "octo", "service": "bluesky"},
+	}})
+	e.fake.Handle("CreatePost", map[string]any{"createPost": map[string]any{
+		"__typename": "PostActionSuccess", "post": map[string]any{"id": "p1", "status": "scheduled"},
+	}})
+	igOf := func(input map[string]any) map[string]any {
+		t.Helper()
+		md, _ := input["metadata"].(map[string]any)
+		ig, _ := md["instagram"].(map[string]any)
+		if ig == nil {
+			t.Fatalf("no instagram metadata in %v", input)
+		}
+		return ig
+	}
+
+	two := []string{"https://cards.example/a.png", "https://cards.example/b.jpg"}
+	if _, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{ChannelID: "ig", Text: "hi", Mode: "addToQueue", AssetURLs: two}); err != nil {
+		t.Fatal(err)
+	}
+	input := postInputOf(t, e)
+	if ig := igOf(input); ig["type"] != "post" || ig["shouldShareToFeed"] != true {
+		t.Fatalf("instagram metadata = %v, want type post shared to feed", ig)
+	}
+	if assets, _ := input["assets"].([]any); len(assets) != 2 {
+		t.Fatalf("assets = %v, want both images", input["assets"])
+	}
+
+	// A first comment rides in the same metadata, next to the type.
+	if _, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{ChannelID: "ig", Text: "hi", Mode: "addToQueue", AssetURLs: two[:1], FirstComment: "link"}); err != nil {
+		t.Fatal(err)
+	}
+	if ig := igOf(postInputOf(t, e)); ig["type"] != "post" || ig["firstComment"] != "link" {
+		t.Fatalf("instagram metadata = %v", ig)
+	}
+
+	// Other networks are untouched.
+	if _, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{ChannelID: "ch1", Text: "solo", Mode: "addToQueue"}); err != nil {
+		t.Fatal(err)
+	}
+	if input := postInputOf(t, e); input["metadata"] != nil {
+		t.Fatalf("bluesky input carries metadata: %v", input)
+	}
+}
+
+// A story says so in the network's metadata; a LinkedIn document goes as the
+// one asset, in place of the images.
+func TestStoriesAndDocuments(t *testing.T) {
+	e := setup(t, time.Hour)
+	ctx := context.Background()
+	e.fake.Handle("GetChannels", map[string]any{"channels": []map[string]any{
+		{"id": "ig", "name": "rocket", "service": "instagram", "type": "business"},
+		{"id": "fb", "name": "rocket", "service": "facebook"},
+		{"id": "li", "name": "rocket", "service": "linkedin"},
+	}})
+	e.fake.Handle("CreatePost", map[string]any{"createPost": map[string]any{
+		"__typename": "PostActionSuccess", "post": map[string]any{"id": "p1", "status": "scheduled"},
+	}})
+	imgs := []string{"https://cards.example/a.png", "https://cards.example/b.jpg"}
+	mdOf := func(input map[string]any, key string) map[string]any {
+		t.Helper()
+		md, _ := input["metadata"].(map[string]any)
+		m, _ := md[key].(map[string]any)
+		if m == nil {
+			t.Fatalf("no %s metadata in %v", key, input)
+		}
+		return m
+	}
+
+	if _, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{ChannelID: "ig", Text: "hi", Mode: "addToQueue", AssetURLs: imgs, Story: true}); err != nil {
+		t.Fatal(err)
+	}
+	if ig := mdOf(postInputOf(t, e), "instagram"); ig["type"] != "story" || ig["shouldShareToFeed"] != false {
+		t.Fatalf("instagram story metadata = %v", ig)
+	}
+
+	if _, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{ChannelID: "fb", Text: "hi", Mode: "addToQueue", AssetURLs: imgs, Story: true}); err != nil {
+		t.Fatal(err)
+	}
+	if fb := mdOf(postInputOf(t, e), "facebook"); fb["type"] != "story" {
+		t.Fatalf("facebook story metadata = %v", fb)
+	}
+	// A plain Facebook post still sends no metadata.
+	if _, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{ChannelID: "fb", Text: "hi", Mode: "addToQueue", AssetURLs: imgs}); err != nil {
+		t.Fatal(err)
+	}
+	if input := postInputOf(t, e); input["metadata"] != nil {
+		t.Fatalf("plain facebook post carries metadata: %v", input)
+	}
+
+	doc := &buffer.Document{URL: "https://cards.example/docs/x.pdf", Title: "Rocket 1.2"}
+	if _, err := e.c.CreatePost(ctx, e.connID, buffer.CreatePostInput{ChannelID: "li", Text: "hi", Mode: "addToQueue", AssetURLs: imgs, Document: doc}); err != nil {
+		t.Fatal(err)
+	}
+	assets, _ := postInputOf(t, e)["assets"].([]any)
+	if len(assets) != 1 {
+		t.Fatalf("assets = %v, want just the document", assets)
+	}
+	d, _ := assets[0].(map[string]any)["document"].(map[string]any)
+	if d["url"] != doc.URL || d["title"] != doc.Title {
+		t.Fatalf("document asset = %v", assets[0])
+	}
+
+	for _, c := range []struct {
+		service, format string
+		ok              bool
+	}{
+		{"instagram", "story", true}, {"facebook", "story", true}, {"linkedin", "document", true},
+		{"twitter", "story", false}, {"linkedin", "story", false}, {"instagram", "document", false},
+		{"bluesky", "", true}, {"instagram", "reel", false},
+	} {
+		if got := buffer.FormatAllowed(c.service, c.format); got != c.ok {
+			t.Errorf("FormatAllowed(%q, %q) = %v, want %v", c.service, c.format, got, c.ok)
+		}
 	}
 }

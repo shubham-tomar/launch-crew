@@ -196,7 +196,7 @@ func (q *Queries) ListCrewPostsByLaunch(ctx context.Context, launchID uuid.UUID)
 }
 
 const listLaunchesForUser = `-- name: ListLaunchesForUser :many
-SELECT l.id, l.owner_user_id, l.repo_id, l.source, l.status, l.title, l.summary, l.release_tag, l.release_url, l.headline_changes, l.roles, l.launch_at, l.window_minutes, l.open_token_hash, l.crew_cap, l.card_preset, l.hero_asset_id, l.created_at, l.open_count, l.open_token_enc, l.release_id, l.qr_logo, l.captain_notified, l.template_id, l.include_card FROM launches l
+SELECT l.id, l.owner_user_id, l.repo_id, l.source, l.status, l.title, l.summary, l.release_tag, l.release_url, l.headline_changes, l.roles, l.launch_at, l.window_minutes, l.open_token_hash, l.crew_cap, l.card_preset, l.hero_asset_id, l.created_at, l.open_count, l.open_token_enc, l.release_id, l.qr_logo, l.captain_notified, l.template_id, l.include_card, l.post_formats FROM launches l
 LEFT JOIN repos r ON r.id = l.repo_id
 WHERE (l.owner_user_id = $1 OR r.owner_user_id = $1) AND l.status <> 'deleted'
 ORDER BY l.created_at DESC
@@ -242,6 +242,7 @@ func (q *Queries) ListLaunchesForUser(ctx context.Context, userID uuid.NullUUID)
 			&i.Launch.CaptainNotified,
 			&i.Launch.TemplateID,
 			&i.Launch.IncludeCard,
+			&i.Launch.PostFormats,
 		); err != nil {
 			return nil, err
 		}

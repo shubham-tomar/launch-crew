@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 
@@ -101,4 +102,50 @@ func (u *Uploader) put(ctx context.Context, dir, ext, contentType string, body [
 		return "", "", fmt.Errorf("put %s: %w", key, err)
 	}
 	return strings.TrimRight(u.PublicBase, "/") + "/" + key, sha, nil
+}
+
+// docMaxSource caps what one page's file may be when it is read back; every
+// stored image is at most 10 MB.
+const docMaxSource = 10<<20 + 1
+
+// Get reads back an object this uploader stored, by its public URL. Any
+// other URL is refused: documents are only ever built from our own files.
+func (u *Uploader) Get(ctx context.Context, url string) ([]byte, error) {
+	key, ok := strings.CutPrefix(url, strings.TrimRight(u.PublicBase, "/")+"/")
+	if !ok || key == "" || strings.Contains(key, "..") {
+		return nil, fmt.Errorf("cards: %q is not one of ours", url)
+	}
+	out, err := u.S3.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(u.Bucket), Key: aws.String(key)})
+	if err != nil {
+		return nil, fmt.Errorf("get %s: %w", key, err)
+	}
+	defer out.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(out.Body, docMaxSource))
+	if err != nil {
+		return nil, fmt.Errorf("get %s: %w", key, err)
+	}
+	if len(data) >= docMaxSource {
+		return nil, fmt.Errorf("get %s: over 10 MB", key)
+	}
+	return data, nil
+}
+
+// PutDocument reads the images back in order, lays them out as a PDF and
+// stores it at docs/<sha256>.pdf, returning its public URL. The same images
+// make the same file, so sending again stores nothing new.
+func (u *Uploader) PutDocument(ctx context.Context, imageURLs []string) (string, error) {
+	pages := make([][]byte, 0, len(imageURLs))
+	for _, url := range imageURLs {
+		data, err := u.Get(ctx, url)
+		if err != nil {
+			return "", err
+		}
+		pages = append(pages, data)
+	}
+	pdf, err := BuildPDF(ctx, pages)
+	if err != nil {
+		return "", err
+	}
+	url, _, err := u.put(ctx, "docs", ".pdf", "application/pdf", pdf)
+	return url, err
 }

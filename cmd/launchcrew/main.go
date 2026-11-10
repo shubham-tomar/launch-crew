@@ -89,9 +89,10 @@ func main() {
 		BaseURL:   cfg.BaseURL,
 		Keyring:   keyring,
 	}
+	crewDeps.Docs = crewDeps.Cards
 	mailer := mail.New(cfg.MailAPIKey, cfg.MailFrom)
 	launchDeps := launch.Deps{
-		Q: q, Pool: pool, Buffer: buf, GitHub: ghc, Cards: crewDeps.Cards, Images: crewDeps.Cards,
+		Q: q, Pool: pool, Buffer: buf, GitHub: ghc, Cards: crewDeps.Cards, Images: crewDeps.Cards, Docs: crewDeps.Cards,
 		Preflight: preflight.Deps{
 			Fetch: preflight.HTTPFetch, Config: buf.Configuration, Limits: buf.DailyPostingLimits,
 			RateHeadroom: launch.RateHeadroom(q, nil),
